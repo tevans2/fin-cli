@@ -1,0 +1,55 @@
+# Secrets and env files
+.env
+.env.*
+!.env.example
+config/.env
+v1/config/.env
+v2/.env
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Separate/private finance data repos
+private/
+finance-data/
+
+# Legacy V1 personal finance data
+*v1*
+
+# Root-level legacy personal finance data
+imports/*/raw/
+imports/*/normalized/
+imports/*/state/
+journal/*.journal
+logs/
+*.log
+
+# Local outputs / scratch files
+out*.txt
+*.csv
+*.jsonl.tmp
+runtime/
+tmp/
+cache/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+v2/.venv/
+*.egg-info/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

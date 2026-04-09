@@ -1,0 +1,23 @@
+[project]
+name = "finance-v2"
+version = "0.1.0"
+description = "Finance CLI V2"
+requires-python = ">=3.11"
+dependencies = [
+  "pyyaml>=6.0",
+  "requests>=2.31.0",
+]
+
+[project.scripts]
+fin = "finance.cli.main:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["finance*"]

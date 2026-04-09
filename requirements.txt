@@ -1,0 +1,8 @@
+# Python dependencies for finance tracking
+
+# Configuration
+python-dotenv>=1.0.0
+PyYAML>=6.0
+
+# HTTP requests
+requests>=2.31.0
