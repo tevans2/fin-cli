@@ -50,6 +50,10 @@ class DataPaths:
         return self.config_dir / "aliases.yaml"
 
     @property
+    def accounts_config(self) -> Path:
+        return self.config_dir / "accounts.journal"
+
+    @property
     def main_journal(self) -> Path:
         return self.journal_dir / "main.journal"
 
@@ -98,6 +102,7 @@ def validate_data_dir(paths: DataPaths) -> list[str]:
         paths.banks_config,
         paths.rules_config,
         paths.aliases_config,
+        paths.accounts_config,
         paths.main_journal,
         paths.manual_journal,
         paths.sync_state,

@@ -9,6 +9,7 @@ from finance.config import load_app_config
 from finance.models.state import BankSyncState
 from finance.models.transaction import TransactionRecord, utc_now_iso
 from finance.services.journal import build_bank_journal
+from finance.storage.accounts_store import AccountsStore
 from finance.storage.jsonl_store import JsonlTransactionStore
 from finance.storage.state_store import SyncStateStore
 
@@ -103,6 +104,20 @@ def parse_v1_incoming_journal(path: Path) -> list[TransactionRecord]:
         )
 
     return records
+
+
+def extract_v1_account_declarations(source_root: Path) -> list[str]:
+    main_path = source_root / "journal" / "main.journal"
+    if not main_path.exists():
+        return []
+    accounts: list[str] = []
+    for raw_line in main_path.read_text().splitlines():
+        line = raw_line.strip()
+        if line.startswith("account "):
+            account = line[len("account "):].strip()
+            if account:
+                accounts.append(account)
+    return accounts
 
 
 def combine_manual_journals(source_root: Path) -> str:
@@ -241,6 +256,7 @@ def migrate_v1(source_root: Path, overwrite_manual: bool = True, overwrite_rules
         config.paths.manual_journal.write_text(combine_manual_journals(source_root))
 
     write_aliases_yaml(config.paths.aliases_config)
+    AccountsStore(config.paths.accounts_config).save(extract_v1_account_declarations(source_root))
 
     migrated_rules = []
     rules_path = source_root / "imports" / "investec" / "rules" / "investec.csv.rules"

@@ -19,6 +19,7 @@ This keeps the system easier to reason about than a raw-import-first workflow wh
 
 - **Canonical transaction storage** in `transactions/<bank>/<year>.jsonl`
 - **Structured categorization rules** in `config/rules.yaml`
+- **Hledger-style account declarations** in `config/accounts.journal`
 - **Manual accounting entries** in `journal/manual.journal`
 - **Generated hledger journals** in `journal/generated/*.journal`
 - **Separate data repo** configured with `FIN_DATA_DIR`
@@ -133,7 +134,8 @@ fin reports is
 
 ```bash
 fin review investec
-fin categorize investec
+fin categorize investec        # TUI (default)
+fin categorize investec --cli  # line-by-line fallback
 ```
 
 ### 5. Commit changes in the data repo
@@ -158,6 +160,7 @@ Important paths inside that data repo:
 
 - `config/banks.yaml`
 - `config/rules.yaml`
+- `config/accounts.journal`
 - `transactions/<bank>/<year>.jsonl`
 - `journal/main.journal`
 - `journal/manual.journal`
@@ -192,7 +195,8 @@ fin journal-build investec
 
 ```bash
 fin review investec
-fin categorize investec
+fin categorize investec        # TUI (default)
+fin categorize investec --cli  # line-by-line fallback
 fin rules-list
 fin rules-apply investec
 ```
@@ -230,6 +234,8 @@ fin reports bs
 fin data-commit -m "Sync latest transactions"
 fin data-push
 ```
+
+In the TUI categorization flow, the account picker is focused by default. Use `Ctrl-j` / `Ctrl-k` (or `j` / `k`) to move in the account picker. Press `Esc` to switch into action mode, where keybindings for alias, skip, and quit are shown.
 
 ### Initial migration workflow
 

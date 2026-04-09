@@ -34,6 +34,7 @@ def cmd_doctor(_: argparse.Namespace) -> int:
     print(f"Banks config:   {paths.banks_config}")
     print(f"Rules config:   {paths.rules_config}")
     print(f"Aliases config: {paths.aliases_config}")
+    print(f"Accounts config:{paths.accounts_config}")
     print(f"Main journal:   {paths.main_journal}")
     print(f"Manual journal: {paths.manual_journal}")
     print(f"Sync state:     {paths.sync_state}")
@@ -118,7 +119,11 @@ def cmd_review(args: argparse.Namespace) -> int:
 
 def cmd_categorize(args: argparse.Namespace) -> int:
     try:
-        result = categorize_unknowns_interactively(args.bank, args.category)
+        if args.cli:
+            result = categorize_unknowns_interactively(args.bank, args.category)
+        else:
+            from finance.tui.categorize import run_categorize_tui
+            result = run_categorize_tui(args.bank, args.category)
     except Exception as exc:
         print(f"ERROR: {exc}")
         return 1
@@ -226,6 +231,8 @@ def build_parser() -> argparse.ArgumentParser:
     categorize = sub.add_parser("categorize", help="Interactively categorize unknown canonical transactions")
     categorize.add_argument("bank", help="Bank/provider name, eg investec")
     categorize.add_argument("--category", choices=["expenses", "income", "both"], default="both")
+    categorize.add_argument("--cli", action="store_true", help="Use the line-by-line CLI review flow instead of the TUI")
+    categorize.add_argument("--tui", action="store_true", help="Use the TUI review flow (default)")
     categorize.set_defaults(func=cmd_categorize)
 
     rules = sub.add_parser("rules-list", help="List active categorization rules")

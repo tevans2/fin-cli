@@ -50,6 +50,8 @@ DEFAULT_SYNC_STATE = {
     "banks": {},
 }
 
+DEFAULT_ACCOUNTS = "; Account declarations for picker and journal ergonomics\n\naccount assets:bank:investec:checking\naccount assets:bank:investec:savings\naccount expenses:unknown\naccount income:unknown\n"
+
 DEFAULT_MAIN_JOURNAL = "; V2 main journal\n\ninclude manual.journal\ninclude generated/investec.journal\n"
 DEFAULT_MANUAL_JOURNAL = "; Manual finance entries\n"
 DEFAULT_GITIGNORE = "logs/\ntmp/\nraw/\nnormalized/\ncache/\n*.wal\n*.shm\nruntime/\n"
@@ -74,6 +76,7 @@ def initialize_data_dir(target: Path) -> None:
         yaml.safe_dump(DEFAULT_RULES, f, sort_keys=False)
     with open(target / "config" / "aliases.yaml", "w") as f:
         yaml.safe_dump(DEFAULT_ALIASES, f, sort_keys=False)
+    (target / "config" / "accounts.journal").write_text(DEFAULT_ACCOUNTS)
     with open(target / "state" / "sync.yaml", "w") as f:
         yaml.safe_dump(DEFAULT_SYNC_STATE, f, sort_keys=False)
 
