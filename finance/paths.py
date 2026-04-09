@@ -22,6 +22,10 @@ class DataPaths:
         return self.root / "transactions"
 
     @property
+    def imports_dir(self) -> Path:
+        return self.root / "imports"
+
+    @property
     def journal_dir(self) -> Path:
         return self.root / "journal"
 
@@ -90,6 +94,7 @@ def validate_data_dir(paths: DataPaths) -> list[str]:
     required_dirs = [
         paths.config_dir,
         paths.transactions_dir,
+        paths.imports_dir,
         paths.journal_dir,
         paths.generated_journal_dir,
         paths.state_dir,

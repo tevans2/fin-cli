@@ -32,6 +32,7 @@ This keeps the system easier to reason about than a raw-import-first workflow wh
 - initialize a separate finance data repo
 - migrate existing V1 journal data into V2 canonical storage
 - sync Investec transactions into canonical JSONL files
+- import Tyme CSV statements into canonical JSONL files
 - apply categorization rules
 - review and manually categorize unknown transactions
 - generate `hledger` journals from canonical transaction data
@@ -128,6 +129,8 @@ fin migrate-v1 ../v1
 ```bash
 fin reports bs
 fin reports is
+fin compare investec --account checking --begin 2026-03-10 --end 2026-04-09
+fin sync investec --account savings --begin 2026-01-01 --end 2026-04-09
 ```
 
 ### 4. Review or categorize transactions
@@ -161,6 +164,7 @@ Important paths inside that data repo:
 - `config/banks.yaml`
 - `config/rules.yaml`
 - `config/accounts.journal`
+- `imports/<bank>/*`
 - `transactions/<bank>/<year>.jsonl`
 - `journal/main.journal`
 - `journal/manual.journal`
@@ -189,6 +193,8 @@ fin migrate-v1 ../v1
 ```bash
 fin sync investec
 fin journal-build investec
+fin import tyme path/to/statement.csv --account checking --dry-run
+fin import tyme path/to/statement.csv --account checking
 ```
 
 ### Review and categorization
@@ -209,6 +215,7 @@ fin reports is
 fin reports expenses
 fin reports unknowns
 fin hledger balance
+fin compare investec --account savings --date-mode action --begin 2026-03-01 --end 2026-03-31
 ```
 
 ### Data repo git helpers

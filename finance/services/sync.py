@@ -18,12 +18,19 @@ def infer_unknown_category(amount: str) -> str:
     return "expenses:unknown" if Decimal(amount) < 0 else "income:unknown"
 
 
-def determine_date_range(sync_state: BankSyncState | None, days_back: int = 7) -> tuple[str, str]:
-    end_date = datetime.now().strftime("%Y-%m-%d")
+def determine_date_range(
+    sync_state: BankSyncState | None,
+    begin: str | None = None,
+    end: str | None = None,
+    days_back: int = 7,
+) -> tuple[str, str]:
+    end_date = end or datetime.now().strftime("%Y-%m-%d")
+    if begin:
+        return begin, end_date
     if sync_state and sync_state.last_successful_sync_date:
         start = datetime.strptime(sync_state.last_successful_sync_date, "%Y-%m-%d") + timedelta(days=1)
     else:
-        start = datetime.now() - timedelta(days=days_back)
+        start = datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=days_back)
     return start.strftime("%Y-%m-%d"), end_date
 
 
@@ -40,7 +47,33 @@ def _preserve_user_fields(existing: TransactionRecord | None, incoming: Transact
     return incoming
 
 
-def sync_bank(bank: str) -> dict:
+def _sync_state_key(bank: str, account: str) -> str:
+    return bank if account == "checking" else f"{bank}:{account}"
+
+
+def _resolve_ledger_account(bank: str, bank_config: dict, account: str) -> str:
+    accounts = bank_config.get("accounts", {})
+    if account in accounts and accounts[account].get("ledger_account"):
+        return accounts[account]["ledger_account"]
+
+    configured = bank_config.get("ledger_account")
+    configured_type = bank_config.get("type")
+    if configured and account == configured_type:
+        return configured
+    if configured and configured.endswith(":checking") and account == "savings":
+        return configured[:-len(":checking")] + ":savings"
+    if configured and configured_type and configured.endswith(f":{configured_type}"):
+        return configured[: -len(configured_type)] + account
+    return f"assets:bank:{bank}:{account}"
+
+
+def sync_bank(
+    bank: str,
+    account: str = "checking",
+    begin: str | None = None,
+    end: str | None = None,
+    days_back: int = 7,
+) -> dict:
     config = load_app_config()
     bank_config = config.banks.get("banks", {}).get(bank)
     if not bank_config:
@@ -51,15 +84,24 @@ def sync_bank(bank: str) -> dict:
 
     state_store = SyncStateStore(config.paths.sync_state)
     sync_state = state_store.load()
-    bank_state = sync_state.banks.get(bank)
-    start_date, end_date = determine_date_range(bank_state)
+    state_key = _sync_state_key(bank, account)
+    bank_state = sync_state.banks.get(state_key) or sync_state.banks.get(bank)
+    start_date, end_date = determine_date_range(bank_state, begin=begin, end=end, days_back=days_back)
 
-    provider = InvestecProvider(bank_config)
-    fetched = provider.fetch_transactions(start_date, end_date)
+    provider = InvestecProvider(bank_config, account_name=account)
+    record_date_mode = "action" if account == "savings" else "posting"
+    fetched = provider.fetch_transactions(
+        start_date,
+        end_date,
+        date_mode="action",
+        record_date_mode=record_date_mode,
+    )
 
     rules = RulesStore(config.paths.rules_config).load()
     aliases = AliasStore(config.paths.aliases_config).load()
     tx_store = JsonlTransactionStore(config.paths.transactions_dir)
+
+    ledger_account = _resolve_ledger_account(bank, bank_config, account)
 
     existing_by_id: dict[str, TransactionRecord] = {}
     bank_dir = config.paths.transactions_dir / bank
@@ -74,7 +116,7 @@ def sync_bank(bank: str) -> dict:
             id=item.id,
             institution=bank,
             source_account=item.source_account,
-            ledger_account=bank_config["ledger_account"],
+            ledger_account=ledger_account,
             date=item.date,
             description=item.description,
             amount=item.amount,
@@ -106,11 +148,12 @@ def sync_bank(bank: str) -> dict:
         inserted += i
         updated += u
 
-    sync_state.banks[bank] = BankSyncState(last_successful_sync_date=end_date, cursor=None)
+    sync_state.banks[state_key] = BankSyncState(last_successful_sync_date=end_date, cursor=None)
     state_store.save(sync_state)
 
     return {
         "bank": bank,
+        "account": account,
         "start_date": start_date,
         "end_date": end_date,
         "fetched": len(fetched),

@@ -23,5 +23,11 @@ class FetchedTransaction:
 class Provider(Protocol):
     name: str
 
-    def fetch_transactions(self, start_date: str, end_date: str) -> list[FetchedTransaction]:
+    def fetch_transactions(
+        self,
+        start_date: str,
+        end_date: str,
+        date_mode: str = "action",
+        record_date_mode: str = "posting",
+    ) -> list[FetchedTransaction]:
         ...

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from finance.paths import DataDirError, get_data_paths, validate_data_dir
 from finance.services.data_repo import DataRepoError, git_commit, git_pull, git_push, git_status
+from finance.services.import_statement import import_tyme_csv
 from finance.services.init_data import initialize_data_dir
 from finance.services.journal import build_bank_journal
 from finance.services.migrate import migrate_v1
@@ -57,11 +58,20 @@ def cmd_init_data(args: argparse.Namespace) -> int:
 
 def cmd_sync(args: argparse.Namespace) -> int:
     try:
-        result = sync_bank(args.bank)
+        result = sync_bank(
+            args.bank,
+            account=args.account,
+            begin=args.begin,
+            end=args.end,
+            days_back=args.days,
+        )
     except Exception as exc:
         print(f"ERROR: {exc}")
         return 1
-    print(f"Synced {result['bank']}: fetched={result['fetched']} inserted={result['inserted']} updated={result['updated']}")
+    print(
+        f"Synced {result['bank']}[{result['account']}]: fetched={result['fetched']} "
+        f"inserted={result['inserted']} updated={result['updated']}"
+    )
     print(f"Date range: {result['start_date']} -> {result['end_date']}")
     if result["years"]:
         print(f"Touched years: {', '.join(map(str, result['years']))}")
@@ -76,6 +86,49 @@ def cmd_journal_build(args: argparse.Namespace) -> int:
         return 1
     print(f"Built journal for {result['bank']}: {result['transactions']} transactions")
     print(f"Output: {result['output']}")
+    return 0
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    if args.bank != "tyme":
+        print("ERROR: only tyme CSV import is supported right now")
+        return 1
+    try:
+        result = import_tyme_csv(
+            args.file,
+            account=args.account,
+            delimiter=args.delimiter,
+            dry_run=args.dry_run,
+            copy_raw=not args.no_copy_raw,
+            date_column=args.date_column,
+            description_column=args.description_column,
+            amount_column=args.amount_column,
+            debit_column=args.debit_column,
+            credit_column=args.credit_column,
+            balance_column=args.balance_column,
+            reference_column=args.reference_column,
+        )
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+
+    print(
+        f"Imported {result['bank']}[{result['account']}]: rows={result['rows']} inserted={result['inserted']} "
+        f"updated={result['updated']} unchanged={result['unchanged']} dry_run={result['dry_run']}"
+    )
+    if result["date_range"]:
+        print(f"Date range: {result['date_range']['start']} -> {result['date_range']['end']}")
+    print(f"Detected mapping: {result['mapping']}")
+    if result["years"]:
+        print(f"Touched years: {', '.join(map(str, result['years']))}")
+    if result["raw_copy"]:
+        print(f"Raw CSV copy: {result['raw_copy']}")
+    if result["journal_output"]:
+        print(f"Journal output: {result['journal_output']}")
+    if result["preview"]:
+        print("Preview:")
+        for row in result["preview"]:
+            print(f"  {row['date']} | {row['amount']:>10} | {row['description']} | {row['id']}")
     return 0
 
 
@@ -165,6 +218,31 @@ def cmd_reports(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_compare(args: argparse.Namespace) -> int:
+    try:
+        from finance.tui.compare import run_compare_tui
+        result = run_compare_tui(
+            args.bank,
+            account=args.account,
+            begin=args.begin,
+            end=args.end,
+            days=args.days,
+            date_mode=args.date_mode,
+        )
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    print(
+        f"Compared {result['bank']}[{result['account']}]: api={result['api_count']} journal={result['journal_count']} "
+        f"date_mode={result['date_mode']} range={result['start_date']}->{result['end_date']} offset={result['offset']}"
+    )
+    print(
+        f"Balances: api_current={result['api_current_balance']} api_available={result['api_available_balance']} "
+        f"journal_end={result['journal_balance']}"
+    )
+    return 0
+
+
 def cmd_data_status(_: argparse.Namespace) -> int:
     try:
         return git_status()
@@ -209,13 +287,33 @@ def build_parser() -> argparse.ArgumentParser:
     init_data.add_argument("--force", action="store_true", help="Allow initialization in a non-empty directory")
     init_data.set_defaults(func=cmd_init_data)
 
-    sync = sub.add_parser("sync", help="Fetch one bank into canonical JSONL storage")
+    sync = sub.add_parser("sync", help="Fetch one bank account into canonical JSONL storage")
     sync.add_argument("bank", help="Bank/provider name, eg investec")
+    sync.add_argument("--account", choices=["checking", "savings"], default="checking", help="Investec account to sync")
+    sync.add_argument("--days", type=int, default=7, help="Lookback window in days when --begin is not supplied")
+    sync.add_argument("--begin", help="Begin date YYYY-MM-DD")
+    sync.add_argument("--end", help="End date YYYY-MM-DD")
     sync.set_defaults(func=cmd_sync)
 
     journal = sub.add_parser("journal-build", help="Generate an hledger journal from canonical transactions")
     journal.add_argument("bank", help="Bank/provider name, eg investec")
     journal.set_defaults(func=cmd_journal_build)
+
+    imp = sub.add_parser("import", help="Import statement data into canonical JSONL storage")
+    imp.add_argument("bank", choices=["tyme"], help="Statement import source")
+    imp.add_argument("file", help="CSV statement file")
+    imp.add_argument("--account", choices=["checking", "savings"], default="checking")
+    imp.add_argument("--delimiter", default=",", help="CSV delimiter")
+    imp.add_argument("--dry-run", action="store_true", help="Parse and preview without writing data")
+    imp.add_argument("--no-copy-raw", action="store_true", help="Do not copy the raw CSV into FIN_DATA_DIR/imports")
+    imp.add_argument("--date-column", help="Explicit CSV date column name")
+    imp.add_argument("--description-column", help="Explicit CSV description column name")
+    imp.add_argument("--amount-column", help="Explicit CSV signed amount column name")
+    imp.add_argument("--debit-column", help="Explicit CSV debit column name")
+    imp.add_argument("--credit-column", help="Explicit CSV credit column name")
+    imp.add_argument("--balance-column", help="Explicit CSV balance column name")
+    imp.add_argument("--reference-column", help="Explicit CSV reference/id column name")
+    imp.set_defaults(func=cmd_import)
 
     migrate = sub.add_parser("migrate-v1", help="Import existing V1 journal data into V2 canonical storage")
     migrate.add_argument("source", help="Path to the V1 project root")
@@ -250,6 +348,15 @@ def build_parser() -> argparse.ArgumentParser:
     reports = sub.add_parser("reports", help="Run a named report against the V2 main journal")
     reports.add_argument("name", choices=["bs", "is", "expenses", "unknowns"])
     reports.set_defaults(func=cmd_reports)
+
+    compare = sub.add_parser("compare", help="Compare live API transactions against local canonical/journal transactions")
+    compare.add_argument("bank", help="Bank/provider name, eg investec")
+    compare.add_argument("--account", choices=["checking", "savings"], default="checking", help="Investec account to compare")
+    compare.add_argument("--days", type=int, default=30, help="Lookback window in days when --begin is not supplied")
+    compare.add_argument("--begin", help="Begin date YYYY-MM-DD")
+    compare.add_argument("--end", help="End date YYYY-MM-DD")
+    compare.add_argument("--date-mode", choices=["posting", "action"], help="Date semantics for API-side comparison; defaults to posting for checking, action for savings")
+    compare.set_defaults(func=cmd_compare)
 
     data_status = sub.add_parser("data-status", help="Run git status in the FIN_DATA_DIR repo")
     data_status.set_defaults(func=cmd_data_status)
