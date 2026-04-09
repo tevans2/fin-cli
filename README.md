@@ -1,5 +1,12 @@
 # Finance CLI
 
+  _|            _|_|  _|
+_|_|_|        _|          _|_|_|
+_|_|        _|_|_|_|  _|  _|    _|
+  _|_|        _|      _|  _|    _|
+_|_|_|        _|      _|  _|    _|
+  _|
+
 A personal finance CLI built on `hledger` for syncing transactions, categorizing them, and generating reports from a clean canonical transaction store.
 
 ## Overview

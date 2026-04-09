@@ -24,7 +24,7 @@ def _format_amount(amount: str, currency: str) -> str:
 
 
 def _render_transaction(record: TransactionRecord) -> str:
-    description = record.payee or record.description
+    description = record.alias or record.payee or record.description
     opposite_amount = f"{-float(record.amount):.2f}"
     return (
         f"{record.date} {_status_marker(record.status)} {description}  ; txn_id: {record.id}\n"

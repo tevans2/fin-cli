@@ -180,6 +180,13 @@ def parse_v1_rules_file(path: Path) -> list[dict]:
     return rules
 
 
+def write_aliases_yaml(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        with open(path, "w") as f:
+            yaml.safe_dump({"aliases": []}, f, sort_keys=False)
+
+
 def write_rules_yaml(path: Path, migrated_rules: list[dict]) -> None:
     data = {
         "rules": [
@@ -232,6 +239,8 @@ def migrate_v1(source_root: Path, overwrite_manual: bool = True, overwrite_rules
 
     if overwrite_manual:
         config.paths.manual_journal.write_text(combine_manual_journals(source_root))
+
+    write_aliases_yaml(config.paths.aliases_config)
 
     migrated_rules = []
     rules_path = source_root / "imports" / "investec" / "rules" / "investec.csv.rules"

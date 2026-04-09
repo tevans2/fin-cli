@@ -41,6 +41,10 @@ DEFAULT_RULES = {
     ]
 }
 
+DEFAULT_ALIASES = {
+    "aliases": []
+}
+
 DEFAULT_SYNC_STATE = {
     "schema_version": 1,
     "banks": {},
@@ -68,6 +72,8 @@ def initialize_data_dir(target: Path) -> None:
         yaml.safe_dump(DEFAULT_BANKS, f, sort_keys=False)
     with open(target / "config" / "rules.yaml", "w") as f:
         yaml.safe_dump(DEFAULT_RULES, f, sort_keys=False)
+    with open(target / "config" / "aliases.yaml", "w") as f:
+        yaml.safe_dump(DEFAULT_ALIASES, f, sort_keys=False)
     with open(target / "state" / "sync.yaml", "w") as f:
         yaml.safe_dump(DEFAULT_SYNC_STATE, f, sort_keys=False)
 

@@ -8,6 +8,7 @@ from finance.config import load_app_config
 from finance.models.state import BankSyncState
 from finance.models.transaction import TransactionRecord, utc_now_iso
 from finance.providers.investec import InvestecProvider
+from finance.storage.alias_store import AliasStore, apply_aliases
 from finance.storage.jsonl_store import JsonlTransactionStore
 from finance.storage.rules_store import RulesStore, categorize_record
 from finance.storage.state_store import SyncStateStore
@@ -24,6 +25,19 @@ def determine_date_range(sync_state: BankSyncState | None, days_back: int = 7) -
     else:
         start = datetime.now() - timedelta(days=days_back)
     return start.strftime("%Y-%m-%d"), end_date
+
+
+def _preserve_user_fields(existing: TransactionRecord | None, incoming: TransactionRecord) -> TransactionRecord:
+    if existing is None:
+        return incoming
+
+    incoming.category = existing.category
+    incoming.category_source = existing.category_source
+    incoming.alias = existing.alias
+    incoming.notes = existing.notes
+    incoming.tags = existing.tags
+    incoming.updated_at = existing.updated_at
+    return incoming
 
 
 def sync_bank(bank: str) -> dict:
@@ -44,7 +58,15 @@ def sync_bank(bank: str) -> dict:
     fetched = provider.fetch_transactions(start_date, end_date)
 
     rules = RulesStore(config.paths.rules_config).load()
+    aliases = AliasStore(config.paths.aliases_config).load()
     tx_store = JsonlTransactionStore(config.paths.transactions_dir)
+
+    existing_by_id: dict[str, TransactionRecord] = {}
+    bank_dir = config.paths.transactions_dir / bank
+    if bank_dir.exists():
+        for path in sorted(bank_dir.glob("*.jsonl")):
+            for record in tx_store.read_file(path):
+                existing_by_id[record.id] = record
 
     by_year: dict[int, list[TransactionRecord]] = defaultdict(list)
     for item in fetched:
@@ -68,7 +90,12 @@ def sync_bank(bank: str) -> dict:
             source_hash=item.source_hash,
             provider_metadata=item.provider_metadata,
         )
-        record = categorize_record(record, rules)
+        record = apply_aliases(record, aliases)
+        existing = existing_by_id.get(record.id)
+        if existing is None:
+            record = categorize_record(record, rules)
+        else:
+            record = _preserve_user_fields(existing, record)
         by_year[int(record.date[:4])].append(record)
 
     inserted = 0

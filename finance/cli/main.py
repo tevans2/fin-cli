@@ -33,6 +33,7 @@ def cmd_doctor(_: argparse.Namespace) -> int:
     print("Data directory looks valid.")
     print(f"Banks config:   {paths.banks_config}")
     print(f"Rules config:   {paths.rules_config}")
+    print(f"Aliases config: {paths.aliases_config}")
     print(f"Main journal:   {paths.main_journal}")
     print(f"Manual journal: {paths.manual_journal}")
     print(f"Sync state:     {paths.sync_state}")
@@ -109,7 +110,8 @@ def cmd_review(args: argparse.Namespace) -> int:
         print("No unknown transactions found.")
         return 0
     for row in rows:
-        print(f"{row.date} | {row.amount:>10} {row.currency} | {row.id} | {row.description}")
+        alias = f" | alias={row.alias}" if getattr(row, 'alias', None) else ""
+        print(f"{row.date} | {row.amount:>10} {row.currency} | {row.id} | {row.description}{alias}")
     print(f"Total unknowns: {len(rows)}")
     return 0
 
@@ -120,7 +122,7 @@ def cmd_categorize(args: argparse.Namespace) -> int:
     except Exception as exc:
         print(f"ERROR: {exc}")
         return 1
-    print(f"Updated: {result['updated']}  Skipped: {result['skipped']}  Remaining unknowns: {result['remaining']}")
+    print(f"Updated: {result['updated']}  Skipped: {result['skipped']}  Aliases created: {result['aliases_created']}  Remaining unknowns: {result['remaining']}")
     return 0
 
 

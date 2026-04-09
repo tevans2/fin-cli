@@ -24,6 +24,7 @@ class TransactionRecord:
     status: str
     imported_at: str
     payee: str | None = None
+    alias: str | None = None
     notes: str | None = None
     tags: list[str] = field(default_factory=list)
     updated_at: str | None = None

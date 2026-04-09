@@ -54,6 +54,52 @@ def update_transaction_category(bank: str, txn_id: str, category: str, source: s
     return updated_any
 
 
+def update_transaction_alias(bank: str, txn_id: str, alias: str) -> bool:
+    config = load_app_config()
+    store = JsonlTransactionStore(config.paths.transactions_dir)
+    bank_dir = config.paths.transactions_dir / bank
+    if not bank_dir.exists():
+        return False
+
+    updated_any = False
+    for path in sorted(bank_dir.glob("*.jsonl")):
+        records = store.read_file(path)
+        changed = False
+        for record in records:
+            if record.id == txn_id:
+                record.alias = alias
+                record.updated_at = utc_now_iso()
+                changed = True
+                updated_any = True
+                break
+        if changed:
+            store.write_file(path, records)
+            break
+    return updated_any
+
+
+def apply_alias_to_matching_descriptions(bank: str, description: str, alias: str) -> int:
+    config = load_app_config()
+    store = JsonlTransactionStore(config.paths.transactions_dir)
+    bank_dir = config.paths.transactions_dir / bank
+    if not bank_dir.exists():
+        return 0
+
+    updated = 0
+    for path in sorted(bank_dir.glob("*.jsonl")):
+        records = store.read_file(path)
+        changed = False
+        for record in records:
+            if record.description == description:
+                record.alias = alias
+                record.updated_at = utc_now_iso()
+                changed = True
+                updated += 1
+        if changed:
+            store.write_file(path, records)
+    return updated
+
+
 def replace_transactions(bank: str, records: list[TransactionRecord]) -> None:
     config = load_app_config()
     store = JsonlTransactionStore(config.paths.transactions_dir)
