@@ -35,7 +35,9 @@ This keeps the system easier to reason about than a raw-import-first workflow wh
 - import Tyme CSV statements into canonical JSONL files
 - apply categorization rules
 - review and manually categorize unknown transactions
+- split transactions across multiple categories in the TUI (`x` key)
 - generate `hledger` journals from canonical transaction data
+- track investment valuations and generate unrealised gains/losses entries
 - run `hledger` reports through the CLI
 - run basic git workflows against the separate data repo
 
@@ -62,15 +64,25 @@ finance-data/
   config/
     banks.yaml
     rules.yaml
+    accounts.journal
   transactions/
     investec/
       2025.jsonl
       2026.jsonl
+    tyme/
+      2026.jsonl
+  investments/
+    easyequities.jsonl
+    ibkr.jsonl
   journal/
     main.journal
     manual.journal
     generated/
       investec.journal
+      tyme.journal
+      investments.journal
+  imports/
+    tyme/
   state/
     sync.yaml
 ```
@@ -218,11 +230,32 @@ fin hledger balance
 fin compare investec --account savings --date-mode action --begin 2026-03-01 --end 2026-03-31
 ```
 
+### Investment tracking
+
+```bash
+# Seed baseline (matches manual.journal cost basis entry — no journal entry generated)
+fin investment-set easyequities 28100 --baseline --date 2025-12-31
+
+# Record current market value
+fin investment-set easyequities 45000
+fin investment-set ibkr 2589.91 --currency USD
+
+# View
+fin investment-list
+fin investment-history easyequities
+
+# Regenerate journal without adding a valuation
+fin investment-build
+```
+
+See `docs/investments.md` for the full workflow including deposits and selling.
+
 ### Data repo git helpers
 
 ```bash
 fin data-status
 fin data-pull
+fin data-commit            # auto datetime message
 fin data-commit -m "Update finance data"
 fin data-push
 ```
@@ -292,15 +325,12 @@ That data repo can be tracked independently and optionally encrypted remotely wi
 
 ## Documentation
 
-See also:
-
-- `proposed-plan.md`
-- `implementation-roadmap.md`
-- `docs/transaction-schema.md`
-- `docs/path-config.md`
-- `docs/data-repo-layout.md`
-- `docs/data-repo-git-workflow.md`
-- `docs/migration-from-v1.md`
+- `docs/tyme-import.md` — Tyme CSV import workflow, best CSV format, column detection
+- `docs/investments.md` — investment tracking, valuations, cost basis, selling
+- `docs/manual-journal.md` — manual journal patterns: opening balances, income deferral, transfers
+- `docs/compare.md` — comparing live API transactions against local journal
+- `docs/transaction-schema.md` — canonical transaction JSONL schema
+- `docs/accounts-config.md` — account declarations
 
 ---
 
