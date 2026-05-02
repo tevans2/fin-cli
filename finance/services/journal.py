@@ -12,15 +12,8 @@ def _status_marker(status: str) -> str:
     return "*" if status == "cleared" else "!"
 
 
-def _commodity_symbol(currency: str) -> str:
-    return {
-        "ZAR": "R",
-        "USD": "$",
-    }.get(currency, currency + " ")
-
-
 def _format_amount(amount: str, currency: str) -> str:
-    return f"{_commodity_symbol(currency)}{float(amount):.2f}"
+    return f"{float(amount):.2f} {currency}"
 
 
 def _render_transaction(record: TransactionRecord) -> str:
