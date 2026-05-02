@@ -19,7 +19,8 @@ class CompareTui(App[CompareResult]):
     CSS = """
     #summary { height: 5; padding: 0 1; }
     #scroll_area { height: 1fr; }
-    #left, #right { width: 1fr; padding: 1 2; }
+    #row_container { height: auto; }
+    #left, #right { width: 1fr; padding: 1 2; height: auto; }
     #left_title, #right_title { height: 1; }
     """
 
@@ -38,7 +39,7 @@ class CompareTui(App[CompareResult]):
         yield Header()
         yield Static(id="summary")
         with VerticalScroll(id="scroll_area"):
-            with Horizontal():
+            with Horizontal(id="row_container"):
                 with Vertical(id="left"):
                     yield Static("Investec API", id="left_title")
                     yield Static(id="left_rows")
