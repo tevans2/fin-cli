@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Footer, Header, Static
 
 from finance.services.compare import CompareDataset, CompareRow, build_compare_dataset
@@ -18,6 +18,7 @@ class CompareResult:
 class CompareTui(App[CompareResult]):
     CSS = """
     #summary { height: 5; padding: 0 1; }
+    #scroll_area { height: 1fr; }
     #left, #right { width: 1fr; padding: 1 2; }
     #left_title, #right_title { height: 1; }
     """
@@ -25,8 +26,8 @@ class CompareTui(App[CompareResult]):
     BINDINGS = [
         Binding("ctrl+j", "offset_down", "Offset +1"),
         Binding("ctrl+k", "offset_up", "Offset -1"),
-        Binding("j", "offset_down", "Offset +1", show=False),
-        Binding("k", "offset_up", "Offset -1", show=False),
+        Binding("j", "scroll_down", "Scroll down", show=False),
+        Binding("k", "scroll_up", "Scroll up", show=False),
         Binding("q", "quit_compare", "Quit"),
     ]
 
@@ -38,13 +39,14 @@ class CompareTui(App[CompareResult]):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Static(id="summary")
-        with Horizontal():
-            with Vertical(id="left"):
-                yield Static("Investec API", id="left_title")
-                yield Static(id="left_rows")
-            with Vertical(id="right"):
-                yield Static("Journal / Canonical", id="right_title")
-                yield Static(id="right_rows")
+        with VerticalScroll(id="scroll_area"):
+            with Horizontal():
+                with Vertical(id="left"):
+                    yield Static("Investec API", id="left_title")
+                    yield Static(id="left_rows")
+                with Vertical(id="right"):
+                    yield Static("Journal / Canonical", id="right_title")
+                    yield Static(id="right_rows")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -71,8 +73,7 @@ class CompareTui(App[CompareResult]):
         compare_lines: list[str] = []
 
         max_rows = max(len(api), len(journal))
-        visible = min(max_rows, 25)
-        for i in range(visible):
+        for i in range(max_rows):
             left = api[i] if i < len(api) else None
             j_index = i + self.offset
             right = journal[j_index] if 0 <= j_index < len(journal) else None
@@ -87,7 +88,7 @@ class CompareTui(App[CompareResult]):
             f"Bank: {self.dataset.bank}   Account: {self.dataset.account}   Date mode: {self.dataset.date_mode}   Range: {self.dataset.start_date} -> {self.dataset.end_date}   API: {len(api)}   Journal: {len(journal)}   Offset: {self.offset}\n"
             f"API balance now: {api_balance} {self.dataset.balance_currency}   Available: {api_available} {self.dataset.balance_currency}\n"
             f"Journal balance @ {self.dataset.end_date}: {journal_balance}   Account: {self.dataset.journal_balance_label}\n"
-            "Use Ctrl-j / Ctrl-k (or j / k) to shift journal list for alignment."
+            "Use Ctrl-j / Ctrl-k to shift journal alignment.  j / k to scroll."
         )
         self.query_one("#left_rows", Static).update("\n".join(left_lines))
         self.query_one("#right_rows", Static).update("\n".join(f"{status:<8} {line}" for status, line in zip(compare_lines, right_lines)))
@@ -99,6 +100,12 @@ class CompareTui(App[CompareResult]):
     def action_offset_up(self) -> None:
         self.offset -= 1
         self._refresh()
+
+    def action_scroll_down(self) -> None:
+        self.query_one("#scroll_area", VerticalScroll).scroll_down()
+
+    def action_scroll_up(self) -> None:
+        self.query_one("#scroll_area", VerticalScroll).scroll_up()
 
     def action_quit_compare(self) -> None:
         self.exit(CompareResult(offset=self.offset))
