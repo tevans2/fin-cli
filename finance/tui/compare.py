@@ -26,8 +26,8 @@ class CompareTui(App[CompareResult]):
     BINDINGS = [
         Binding("ctrl+j", "offset_down", "Offset +1"),
         Binding("ctrl+k", "offset_up", "Offset -1"),
-        Binding("j", "scroll_down", "Scroll down", show=False),
-        Binding("k", "scroll_up", "Scroll up", show=False),
+        Binding("j", "scroll_down", "Scroll down", show=False, priority=True),
+        Binding("k", "scroll_up", "Scroll up", show=False, priority=True),
         Binding("q", "quit_compare", "Quit"),
     ]
 
@@ -102,10 +102,10 @@ class CompareTui(App[CompareResult]):
         self._refresh()
 
     def action_scroll_down(self) -> None:
-        self.query_one("#scroll_area", VerticalScroll).scroll_down()
+        self.query_one("#scroll_area", VerticalScroll).scroll_by(y=3, animate=False)
 
     def action_scroll_up(self) -> None:
-        self.query_one("#scroll_area", VerticalScroll).scroll_up()
+        self.query_one("#scroll_area", VerticalScroll).scroll_by(y=-3, animate=False)
 
     def action_quit_compare(self) -> None:
         self.exit(CompareResult(offset=self.offset))
