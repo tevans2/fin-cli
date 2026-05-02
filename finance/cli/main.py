@@ -10,7 +10,7 @@ from finance.services.init_data import initialize_data_dir
 from finance.services.investments import build_investment_journal, get_history, list_investments, set_valuation
 from finance.services.journal import build_bank_journal
 from finance.services.migrate import migrate_v1
-from finance.services.reports import run_hledger, run_named_report
+from finance.services.reports import run_cashflow, run_hledger, run_investments, run_named_report
 from finance.services.review import categorize_unknowns_interactively, review_unknowns
 from finance.services.rules import apply_rules, list_rules
 from finance.services.sync import sync_bank
@@ -207,7 +207,15 @@ def cmd_rules_apply(args: argparse.Namespace) -> int:
 
 
 def cmd_hledger(args: argparse.Namespace) -> int:
-    return run_hledger(args.args, exclude_investments=not args.all)
+    return run_hledger(args.args)
+
+
+def cmd_cashflow(args: argparse.Namespace) -> int:
+    return run_cashflow(args.args)
+
+
+def cmd_investments_hledger(args: argparse.Namespace) -> int:
+    return run_investments(args.args)
 
 
 def cmd_reports(args: argparse.Namespace) -> int:
@@ -408,10 +416,17 @@ def build_parser() -> argparse.ArgumentParser:
     rules_apply.add_argument("--include-manual", action="store_true", help="Also re-apply rules to manually categorized transactions")
     rules_apply.set_defaults(func=cmd_rules_apply)
 
-    hledger = sub.add_parser("hledger", help="Run hledger against the V2 main journal")
-    hledger.add_argument("--all", action="store_true", help="Include investment accounts (excluded by default)")
+    hledger = sub.add_parser("hledger", help="Run hledger with no filters (all accounts)")
     hledger.add_argument("args", nargs=argparse.REMAINDER)
     hledger.set_defaults(func=cmd_hledger)
+
+    cashflow = sub.add_parser("cashflow", help="Run hledger scoped to cash accounts (excludes investments and unrealised gains)")
+    cashflow.add_argument("args", nargs=argparse.REMAINDER)
+    cashflow.set_defaults(func=cmd_cashflow)
+
+    investments_hledger = sub.add_parser("investments", help="Run hledger scoped to investment accounts and unrealised gains")
+    investments_hledger.add_argument("args", nargs=argparse.REMAINDER)
+    investments_hledger.set_defaults(func=cmd_investments_hledger)
 
     reports = sub.add_parser("reports", help="Run a named report against the V2 main journal")
     reports.add_argument("name", choices=["bs", "is", "expenses", "unknowns"])
