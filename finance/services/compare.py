@@ -20,10 +20,11 @@ class CompareRow:
     currency: str
     label: str
     txn_id: str
+    raw_description: str = ""
 
     @property
     def key(self) -> tuple[str, str, str]:
-        return (self.date, self.amount, self.label)
+        return (self.date, self.amount, self.raw_description or self.label)
 
 
 @dataclass
@@ -68,6 +69,7 @@ def load_journal_side(bank: str, account: str, begin: str, end: str) -> list[Com
                     currency=record.currency,
                     label=_record_label(record),
                     txn_id=record.id,
+                    raw_description=record.description,
                 )
             )
     return sorted(rows, key=lambda r: (r.date, r.txn_id))
@@ -96,6 +98,7 @@ def load_api_side(bank: str, account: str, begin: str, end: str, date_mode: str)
             currency=item.currency,
             label=item.payee or item.description,
             txn_id=item.id,
+            raw_description=item.description,
         )
         for item in fetched
     ]
