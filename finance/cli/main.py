@@ -207,7 +207,7 @@ def cmd_rules_apply(args: argparse.Namespace) -> int:
 
 
 def cmd_hledger(args: argparse.Namespace) -> int:
-    return run_hledger(args.args)
+    return run_hledger(args.args, exclude_investments=not args.all)
 
 
 def cmd_reports(args: argparse.Namespace) -> int:
@@ -409,6 +409,7 @@ def build_parser() -> argparse.ArgumentParser:
     rules_apply.set_defaults(func=cmd_rules_apply)
 
     hledger = sub.add_parser("hledger", help="Run hledger against the V2 main journal")
+    hledger.add_argument("--all", action="store_true", help="Include investment accounts (excluded by default)")
     hledger.add_argument("args", nargs=argparse.REMAINDER)
     hledger.set_defaults(func=cmd_hledger)
 

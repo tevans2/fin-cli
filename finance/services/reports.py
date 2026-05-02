@@ -13,9 +13,13 @@ REPORTS = {
 }
 
 
-def run_hledger(args: list[str]) -> int:
+EXCLUDE_INVESTMENTS = "not:assets:investments"
+
+
+def run_hledger(args: list[str], exclude_investments: bool = True) -> int:
     config = load_app_config()
-    cmd = ["hledger", "--no-conf", "-f", str(config.paths.main_journal), *args]
+    extra = [EXCLUDE_INVESTMENTS] if exclude_investments else []
+    cmd = ["hledger", "--no-conf", "-f", str(config.paths.main_journal), *args, *extra]
     result = subprocess.run(cmd)
     return result.returncode
 
