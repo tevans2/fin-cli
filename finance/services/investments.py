@@ -20,6 +20,7 @@ def set_valuation(
     currency: str = "ZAR",
     notes: str | None = None,
     account_override: str | None = None,
+    is_baseline: bool = False,
 ) -> dict:
     config = load_app_config()
     store = InvestmentStore(config.paths.investments_dir)
@@ -33,6 +34,7 @@ def set_valuation(
         currency=currency,
         notes=notes,
         recorded_at=utc_now_iso(),
+        is_baseline=is_baseline,
     )
     valuation.validate()
     store.append(valuation)
@@ -63,7 +65,7 @@ def build_investment_journal() -> dict:
             current = Decimal(v.value)
             delta = current - prev_value
             prev_value = current
-            if delta == 0:
+            if v.is_baseline or delta == 0:
                 continue
             note = f"  ; {v.notes}" if v.notes else ""
             lines.append(f"\n{v.date} * {name} valuation{note}")

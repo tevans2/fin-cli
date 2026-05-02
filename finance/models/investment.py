@@ -15,6 +15,7 @@ class InvestmentValuation:
     currency: str
     notes: str | None
     recorded_at: str
+    is_baseline: bool = False
 
     def validate(self) -> None:
         try:

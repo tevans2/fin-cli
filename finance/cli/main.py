@@ -254,11 +254,13 @@ def cmd_investment_set(args: argparse.Namespace) -> int:
             currency=args.currency,
             notes=args.notes,
             account_override=args.account,
+            is_baseline=args.baseline,
         )
     except Exception as exc:
         print(f"ERROR: {exc}")
         return 1
-    print(f"Recorded {result['name']} ({result['account']}): {result['value']} {args.currency} on {result['date']}")
+    kind = "Baseline" if args.baseline else "Recorded"
+    print(f"{kind} {result['name']} ({result['account']}): {result['value']} {args.currency} on {result['date']}")
     print(f"Journal: {result['journal_output']}")
     return 0
 
@@ -430,6 +432,7 @@ def build_parser() -> argparse.ArgumentParser:
     inv_set.add_argument("--currency", default="ZAR")
     inv_set.add_argument("--notes", help="Optional notes")
     inv_set.add_argument("--account", help="Override ledger account (default: assets:investments:<name>)")
+    inv_set.add_argument("--baseline", action="store_true", help="Mark as baseline (no journal entry — use when manual.journal already records the opening value)")
     inv_set.set_defaults(func=cmd_investment_set)
 
     inv_list = sub.add_parser("investment-list", help="Show latest value for all investments")
