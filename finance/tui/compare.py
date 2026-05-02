@@ -102,10 +102,10 @@ class CompareTui(App[CompareResult]):
         self._refresh()
 
     def action_scroll_down(self) -> None:
-        self.query_one("#scroll_area", VerticalScroll).scroll_by(y=3, animate=False)
+        self.query_one("#scroll_area", VerticalScroll).scroll_relative(y=3, animate=False)
 
     def action_scroll_up(self) -> None:
-        self.query_one("#scroll_area", VerticalScroll).scroll_by(y=-3, animate=False)
+        self.query_one("#scroll_area", VerticalScroll).scroll_relative(y=-3, animate=False)
 
     def action_quit_compare(self) -> None:
         self.exit(CompareResult(offset=self.offset))
