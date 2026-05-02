@@ -26,8 +26,6 @@ class CompareTui(App[CompareResult]):
     BINDINGS = [
         Binding("ctrl+j", "offset_down", "Offset +1"),
         Binding("ctrl+k", "offset_up", "Offset -1"),
-        Binding("j", "scroll_down", "Scroll down", show=False, priority=True),
-        Binding("k", "scroll_up", "Scroll up", show=False, priority=True),
         Binding("q", "quit_compare", "Quit"),
     ]
 
@@ -51,6 +49,7 @@ class CompareTui(App[CompareResult]):
 
     def on_mount(self) -> None:
         self._refresh()
+        self.query_one("#scroll_area", VerticalScroll).focus()
 
     def _render_row(self, left: CompareRow | None, right: CompareRow | None) -> str:
         if left is None and right is None:
@@ -88,7 +87,7 @@ class CompareTui(App[CompareResult]):
             f"Bank: {self.dataset.bank}   Account: {self.dataset.account}   Date mode: {self.dataset.date_mode}   Range: {self.dataset.start_date} -> {self.dataset.end_date}   API: {len(api)}   Journal: {len(journal)}   Offset: {self.offset}\n"
             f"API balance now: {api_balance} {self.dataset.balance_currency}   Available: {api_available} {self.dataset.balance_currency}\n"
             f"Journal balance @ {self.dataset.end_date}: {journal_balance}   Account: {self.dataset.journal_balance_label}\n"
-            "Use Ctrl-j / Ctrl-k to shift journal alignment.  j / k to scroll."
+            "Use Ctrl-j / Ctrl-k to shift journal alignment.  Arrow keys / mouse to scroll."
         )
         self.query_one("#left_rows", Static).update("\n".join(left_lines))
         self.query_one("#right_rows", Static).update("\n".join(f"{status:<8} {line}" for status, line in zip(compare_lines, right_lines)))
@@ -100,12 +99,6 @@ class CompareTui(App[CompareResult]):
     def action_offset_up(self) -> None:
         self.offset -= 1
         self._refresh()
-
-    def action_scroll_down(self) -> None:
-        self.query_one("#scroll_area", VerticalScroll).scroll_relative(y=3, animate=False)
-
-    def action_scroll_up(self) -> None:
-        self.query_one("#scroll_area", VerticalScroll).scroll_relative(y=-3, animate=False)
 
     def action_quit_compare(self) -> None:
         self.exit(CompareResult(offset=self.offset))
