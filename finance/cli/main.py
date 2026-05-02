@@ -7,6 +7,7 @@ from finance.paths import DataDirError, get_data_paths, validate_data_dir
 from finance.services.data_repo import DataRepoError, git_commit, git_pull, git_push, git_status
 from finance.services.import_statement import import_tyme_csv
 from finance.services.init_data import initialize_data_dir
+from finance.services.investments import build_investment_journal, get_history, list_investments, set_valuation
 from finance.services.journal import build_bank_journal
 from finance.services.migrate import migrate_v1
 from finance.services.reports import run_hledger, run_named_report
@@ -242,6 +243,69 @@ def cmd_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_investment_set(args: argparse.Namespace) -> int:
+    from datetime import date as _date
+    date = args.date or _date.today().strftime("%Y-%m-%d")
+    try:
+        result = set_valuation(
+            args.name,
+            args.value,
+            date=date,
+            currency=args.currency,
+            notes=args.notes,
+            account_override=args.account,
+        )
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    print(f"Recorded {result['name']} ({result['account']}): {result['value']} {args.currency} on {result['date']}")
+    print(f"Journal: {result['journal_output']}")
+    return 0
+
+
+def cmd_investment_list(_: argparse.Namespace) -> int:
+    try:
+        rows = list_investments()
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    if not rows:
+        print("No investments recorded.")
+        return 0
+    for r in rows:
+        print(f"{r['name']:<24} {r['account']:<40} {float(r['value']):>12.2f} {r['currency']}  ({r['date']})")
+    return 0
+
+
+def cmd_investment_history(args: argparse.Namespace) -> int:
+    try:
+        rows = get_history(args.name)
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    if not rows:
+        print(f"No valuations found for {args.name}.")
+        return 0
+    for r in rows:
+        delta = float(r['delta'])
+        sign = "+" if delta >= 0 else ""
+        note = f"  {r['notes']}" if r['notes'] else ""
+        print(f"{r['date']}  {float(r['value']):>12.2f} {r['currency']}  ({sign}{delta:.2f}){note}")
+    return 0
+
+
+def cmd_investment_build(_: argparse.Namespace) -> int:
+    try:
+        result = build_investment_journal()
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    print(f"Built investments journal: {result['output']}")
+    if result["accounts"]:
+        print(f"Accounts: {', '.join(result['accounts'])}")
+    return 0
+
+
 def cmd_data_status(_: argparse.Namespace) -> int:
     try:
         return git_status()
@@ -358,6 +422,25 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--end", help="End date YYYY-MM-DD")
     compare.add_argument("--date-mode", choices=["posting", "action"], help="Date semantics for API-side comparison; defaults to posting for checking, action for savings")
     compare.set_defaults(func=cmd_compare)
+
+    inv_set = sub.add_parser("investment-set", help="Record a new investment valuation")
+    inv_set.add_argument("name", help="Short investment name, eg easyequities")
+    inv_set.add_argument("value", help="Current market value")
+    inv_set.add_argument("--date", help="Valuation date YYYY-MM-DD (default: today)")
+    inv_set.add_argument("--currency", default="ZAR")
+    inv_set.add_argument("--notes", help="Optional notes")
+    inv_set.add_argument("--account", help="Override ledger account (default: assets:investments:<name>)")
+    inv_set.set_defaults(func=cmd_investment_set)
+
+    inv_list = sub.add_parser("investment-list", help="Show latest value for all investments")
+    inv_list.set_defaults(func=cmd_investment_list)
+
+    inv_history = sub.add_parser("investment-history", help="Show all valuations for an investment")
+    inv_history.add_argument("name", help="Short investment name")
+    inv_history.set_defaults(func=cmd_investment_history)
+
+    inv_build = sub.add_parser("investment-build", help="Regenerate investments.journal without adding a valuation")
+    inv_build.set_defaults(func=cmd_investment_build)
 
     data_status = sub.add_parser("data-status", help="Run git status in the FIN_DATA_DIR repo")
     data_status.set_defaults(func=cmd_data_status)

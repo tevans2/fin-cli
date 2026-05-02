@@ -58,7 +58,7 @@ DEFAULT_SYNC_STATE = {
 
 DEFAULT_ACCOUNTS = "; Account declarations for picker and journal ergonomics\n\naccount assets:bank:investec:checking\naccount assets:bank:investec:savings\naccount assets:bank:tyme:checking\naccount assets:bank:tyme:savings\naccount expenses:unknown\naccount income:unknown\n"
 
-DEFAULT_MAIN_JOURNAL = "; V2 main journal\n\ninclude manual.journal\ninclude generated/investec.journal\ninclude generated/tyme.journal\n"
+DEFAULT_MAIN_JOURNAL = "; V2 main journal\n\ninclude manual.journal\ninclude generated/investec.journal\ninclude generated/tyme.journal\ninclude generated/investments.journal\n"
 DEFAULT_MANUAL_JOURNAL = "; Manual finance entries\n"
 DEFAULT_GITIGNORE = "logs/\ntmp/\nraw/\nnormalized/\ncache/\n*.wal\n*.shm\nruntime/\n"
 DEFAULT_GITATTRIBUTES = "config/** filter=git-crypt diff=git-crypt\ntransactions/** filter=git-crypt diff=git-crypt\njournal/** filter=git-crypt diff=git-crypt\nstate/** filter=git-crypt diff=git-crypt\n"
@@ -70,6 +70,7 @@ def initialize_data_dir(target: Path) -> None:
         "config",
         "transactions",
         "imports",
+        "investments",
         "journal",
         "journal/generated",
         "state",
@@ -91,5 +92,6 @@ def initialize_data_dir(target: Path) -> None:
     (target / "journal" / "manual.journal").write_text(DEFAULT_MANUAL_JOURNAL)
     (target / "journal" / "generated" / "investec.journal").write_text("; Generated journal for investec\n")
     (target / "journal" / "generated" / "tyme.journal").write_text("; Generated journal for tyme\n")
+    (target / "journal" / "generated" / "investments.journal").write_text("; Generated investment valuations — do not edit manually\n")
     (target / ".gitignore").write_text(DEFAULT_GITIGNORE)
     (target / ".gitattributes").write_text(DEFAULT_GITATTRIBUTES)

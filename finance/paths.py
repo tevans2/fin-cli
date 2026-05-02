@@ -75,6 +75,14 @@ class DataPaths:
     def generated_journal(self, bank: str) -> Path:
         return self.generated_journal_dir / f"{bank}.journal"
 
+    @property
+    def investments_dir(self) -> Path:
+        return self.root / "investments"
+
+    @property
+    def generated_investment_journal(self) -> Path:
+        return self.generated_journal_dir / "investments.journal"
+
 
 def resolve_data_dir() -> Path:
     value = os.getenv("FIN_DATA_DIR")
