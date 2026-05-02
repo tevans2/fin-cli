@@ -121,6 +121,7 @@ def run_compare_tui(
     days: int = 30,
     date_mode: str | None = None,
 ) -> dict:
+    print(f"Fetching {bank} [{account}]...", flush=True)
     dataset = build_compare_dataset(bank, account=account, begin=begin, end=end, days=days, date_mode=date_mode)
     result = CompareTui(dataset).run() or CompareResult()
     return {
