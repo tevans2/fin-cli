@@ -10,6 +10,13 @@ VALID_STATUS = {"cleared", "pending"}
 
 
 @dataclass
+class TransactionSplit:
+    account: str
+    amount: str
+    notes: str | None = None
+
+
+@dataclass
 class TransactionRecord:
     id: str
     institution: str
@@ -30,6 +37,7 @@ class TransactionRecord:
     updated_at: str | None = None
     source_hash: str | None = None
     provider_metadata: dict[str, Any] | None = None
+    splits: list[TransactionSplit] = field(default_factory=list)
 
     def validate(self) -> None:
         required = {
@@ -66,13 +74,23 @@ class TransactionRecord:
         if len(self.currency) != 3 or self.currency.upper() != self.currency:
             raise ValueError(f"Invalid currency: {self.currency}")
 
+        if self.splits:
+            total = sum(Decimal(s.amount) for s in self.splits)
+            expected = abs(Decimal(str(self.amount)))
+            if total != expected:
+                raise ValueError(f"Split amounts {total} != transaction total {expected}")
+            if self.category != "split":
+                raise ValueError("category must be 'split' when splits are present")
+
     def to_dict(self) -> dict[str, Any]:
         self.validate()
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TransactionRecord":
-        obj = cls(**data)
+        raw = dict(data)
+        raw["splits"] = [TransactionSplit(**s) for s in raw.pop("splits", None) or []]
+        obj = cls(**raw)
         obj.validate()
         return obj
 

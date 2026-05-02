@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 from finance.paths import DataDirError, get_data_paths, validate_data_dir
@@ -268,8 +267,10 @@ def cmd_data_push(_: argparse.Namespace) -> int:
 
 
 def cmd_data_commit(args: argparse.Namespace) -> int:
+    from datetime import datetime
+    message = args.message or datetime.now().strftime("data update %Y-%m-%d %H:%M")
     try:
-        return git_commit(args.message, add_all=not args.no_add)
+        return git_commit(message, add_all=not args.no_add)
     except DataRepoError as exc:
         print(f"ERROR: {exc}")
         return 1
@@ -368,7 +369,7 @@ def build_parser() -> argparse.ArgumentParser:
     data_push.set_defaults(func=cmd_data_push)
 
     data_commit = sub.add_parser("data-commit", help="Run git add/commit in the FIN_DATA_DIR repo")
-    data_commit.add_argument("-m", "--message", required=True, help="Commit message")
+    data_commit.add_argument("-m", "--message", default=None, help="Commit message (default: auto datetime)")
     data_commit.add_argument("--no-add", action="store_true", help="Do not run 'git add .' before commit")
     data_commit.set_defaults(func=cmd_data_commit)
     return parser

@@ -25,12 +25,17 @@ def _format_amount(amount: str, currency: str) -> str:
 
 def _render_transaction(record: TransactionRecord) -> str:
     description = record.alias or record.payee or record.description
+    header = f"{record.date} {_status_marker(record.status)} {description}  ; txn_id: {record.id}\n"
+    source = f"    {record.ledger_account}    {_format_amount(record.amount, record.currency)}\n"
+    if record.splits:
+        postings = "".join(
+            f"    {s.account}    {_format_amount(s.amount, record.currency)}"
+            + (f"  ; {s.notes}" if s.notes else "") + "\n"
+            for s in record.splits
+        )
+        return header + source + postings
     opposite_amount = f"{-float(record.amount):.2f}"
-    return (
-        f"{record.date} {_status_marker(record.status)} {description}  ; txn_id: {record.id}\n"
-        f"    {record.ledger_account}    {_format_amount(record.amount, record.currency)}\n"
-        f"    {record.category}    {_format_amount(opposite_amount, record.currency)}\n"
-    )
+    return header + source + f"    {record.category}    {_format_amount(opposite_amount, record.currency)}\n"
 
 
 def build_bank_journal(bank: str) -> dict:

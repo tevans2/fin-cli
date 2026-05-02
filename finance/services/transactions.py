@@ -4,7 +4,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from finance.config import load_app_config
-from finance.models.transaction import TransactionRecord, utc_now_iso
+from finance.models.transaction import TransactionRecord, TransactionSplit, utc_now_iso
 from finance.storage.jsonl_store import JsonlTransactionStore
 
 
@@ -44,6 +44,32 @@ def update_transaction_category(bank: str, txn_id: str, category: str, source: s
             if record.id == txn_id:
                 record.category = category
                 record.category_source = source
+                record.updated_at = utc_now_iso()
+                changed = True
+                updated_any = True
+                break
+        if changed:
+            store.write_file(path, records)
+            break
+    return updated_any
+
+
+def update_transaction_splits(bank: str, txn_id: str, splits: list[TransactionSplit]) -> bool:
+    config = load_app_config()
+    store = JsonlTransactionStore(config.paths.transactions_dir)
+    bank_dir = config.paths.transactions_dir / bank
+    if not bank_dir.exists():
+        return False
+
+    updated_any = False
+    for path in sorted(bank_dir.glob("*.jsonl")):
+        records = store.read_file(path)
+        changed = False
+        for record in records:
+            if record.id == txn_id:
+                record.splits = splits
+                record.category = "split"
+                record.category_source = "manual:split"
                 record.updated_at = utc_now_iso()
                 changed = True
                 updated_any = True
