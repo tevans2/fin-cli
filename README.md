@@ -89,6 +89,38 @@ finance-data/
 
 ---
 
+## Makefile
+
+A `Makefile` is included for common workflows. Run `make help` to list all targets.
+
+```
+  help           Show this help
+  sync           Fetch latest transactions from bank (BANK=investec ACCOUNT=checking)
+  categorize     Interactively categorize unknown transactions (TUI)
+  run            sync then categorize (default workflow)
+  bs             Balance sheet
+  is             Income statement
+  expenses       Expense balances
+  unknowns       Register of uncategorized transactions
+  review         List unknown transactions without categorizing
+  spend-month    Expenses by category, this month (depth-2 tree)
+  spend-trend    Month-over-month expenses, last 6 months
+  top-spend      Transactions this month sorted by amount
+  net-worth      Assets minus liabilities snapshot
+  net-income     Net income per month, last 6 months
+  investments    Investment account balances (tree)
+  inv-list       Latest market value per investment
+```
+
+Variables can be overridden on the command line:
+
+```bash
+make sync ACCOUNT=savings
+make run BANK=tyme ACCOUNT=checking
+```
+
+---
+
 ## Requirements
 
 - Python 3.11+
