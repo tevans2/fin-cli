@@ -87,6 +87,33 @@ date,description,amount,balance,reference
 - Include the running `balance` column whenever the bank offers it — that's what
   lets the balance chain verify the import.
 
+## PDF statements
+
+Generic PDF table detection is unreliable, so a PDF profile parses each line with
+a regex whose named groups map onto statement fields. The balance chain then
+catches any misread or dropped line.
+
+```yaml
+name: acme
+id_prefix: acme
+format: pdf
+date_formats: ["%d/%m/%Y"]
+order: chronological
+pdf:
+  # Named groups: date, description, amount (+ optional direction Cr/Dr/+/-),
+  # or debit/credit; plus optional balance, action_date, reference.
+  line_regex: >-
+    (?P<date>\d{2}/\d{2}/\d{4})\s+(?P<description>.+?)\s+
+    (?P<amount>[\d,]+\.\d{2})(?P<direction>-?)\s+(?P<balance>[\d,]+\.\d{2})
+```
+
+To build the regex, run `fin import acme statement.pdf --dry-run` and iterate: the
+importer extracts text line by line, so match against what the PDF actually
+contains. Lines that don't match (headers, page numbers) are ignored; if the
+running balance then fails to reconcile, a transaction line was missed and the
+import is refused. Multi-line wrapped descriptions aren't handled yet — one
+transaction per line.
+
 ## Deduplication
 
 Statement rows carry no stable bank id, so imports dedupe on content — (posting

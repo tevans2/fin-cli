@@ -1,43 +1,11 @@
 from __future__ import annotations
 
 import csv
-from datetime import datetime
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from finance.statements.model import StatementFormatError, StatementRow
+from finance.statements.normalize import clean_number, normalize_header, parse_date, to_decimal
 from finance.statements.profile import StatementProfile
-
-
-def normalize_header(value: str) -> str:
-    return " ".join((value or "").strip().lower().replace("_", " ").split())
-
-
-def _clean_number(value: str | None) -> str:
-    text = (value or "").strip().replace("R", "").replace(",", "").replace(" ", "")
-    if text.startswith("(") and text.endswith(")"):
-        text = "-" + text[1:-1]
-    return text
-
-
-def _decimal(value: str | None) -> Decimal:
-    text = _clean_number(value)
-    if not text:
-        return Decimal(0)
-    try:
-        return Decimal(text)
-    except InvalidOperation as exc:
-        raise StatementFormatError(f"Invalid number: {value!r}") from exc
-
-
-def _parse_date(value: str, formats: list[str]) -> str:
-    text = (value or "").strip()
-    for fmt in formats:
-        try:
-            return datetime.strptime(text, fmt).strftime("%Y-%m-%d")
-        except ValueError:
-            continue
-    raise StatementFormatError(f"Unsupported date format: {value!r}")
 
 
 def _find_header(lines: list[str], profile: StatementProfile) -> int:
@@ -75,12 +43,12 @@ def resolve_columns(fieldnames: list[str], profile: StatementProfile) -> dict[st
 
 def _row_amount(raw: dict[str, str], mapping: dict[str, str], line_number: int) -> str:
     if "amount" in mapping:
-        text = _clean_number(raw.get(mapping["amount"]))
+        text = clean_number(raw.get(mapping["amount"]))
         if not text:
             raise StatementFormatError(f"Line {line_number}: blank amount")
-        return f"{_decimal(text):.2f}"
-    debit = _decimal(raw.get(mapping["debit"]))
-    credit = _decimal(raw.get(mapping["credit"]))
+        return f"{to_decimal(text):.2f}"
+    debit = to_decimal(raw.get(mapping["debit"]))
+    credit = to_decimal(raw.get(mapping["credit"]))
     if debit and credit:
         raise StatementFormatError(f"Line {line_number}: row has both a debit and a credit")
     if not debit and not credit:
@@ -120,17 +88,17 @@ def parse_csv(path: Path, profile: StatementProfile) -> tuple[list[StatementRow]
             raise StatementFormatError(f"Line {line_number}: blank description")
         balance = None
         if "balance" in mapping:
-            balance_text = _clean_number(raw.get(mapping["balance"]))
-            balance = f"{_decimal(balance_text):.2f}" if balance_text else None
+            balance_text = clean_number(raw.get(mapping["balance"]))
+            balance = f"{to_decimal(balance_text):.2f}" if balance_text else None
         reference = None
         if "reference" in mapping:
             reference = (raw.get(mapping["reference"]) or "").strip() or None
         action_date = None
         if "action_date" in mapping:
-            action_date = _parse_date(raw.get(mapping["action_date"], ""), profile.date_formats)
+            action_date = parse_date(raw.get(mapping["action_date"], ""), profile.date_formats)
         rows.append(
             StatementRow(
-                date=_parse_date(raw.get(mapping["date"], ""), profile.date_formats),
+                date=parse_date(raw.get(mapping["date"], ""), profile.date_formats),
                 description=description,
                 amount=_row_amount(raw, mapping, line_number),
                 balance=balance,
