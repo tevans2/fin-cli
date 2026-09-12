@@ -43,6 +43,18 @@ def finalize(rows: list[StatementRow], profile: StatementProfile, account_name: 
     return rows, summarize(rows, verified=verified, account_name=account_name)
 
 
+def resolve_format(path: Path, profile: StatementProfile) -> str:
+    """Decide csv vs pdf. The file extension is the ground truth; it overrides the
+    profile's declared format so a PDF imported under a CSV built-in profile
+    (investec/tyme) still takes the PDF path (and can reach the AI fallback)."""
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        return "pdf"
+    if suffix in (".csv", ".txt", ".tsv"):
+        return "csv"
+    return profile.format
+
+
 def parse_statement(
     path: str | Path,
     profile: StatementProfile,
@@ -56,11 +68,13 @@ def parse_statement(
     is validated by the same balance chain before it is trusted.
     """
     path = Path(path)
-    if profile.format == "csv":
+    fmt = resolve_format(path, profile)
+
+    if fmt == "csv":
         rows, account_name = parse_csv(path, profile)
         return finalize(rows, profile, account_name)
 
-    if profile.format == "pdf":
+    if fmt == "pdf":
         from finance.statements.pdf_parser import parse_pdf
 
         try:
@@ -74,4 +88,4 @@ def parse_statement(
             rows = extract_pdf_rows(path, profile, reason=str(exc))
             return finalize(rows, profile, None)
 
-    raise StatementFormatError(f"Unknown statement format: {profile.format!r}")
+    raise StatementFormatError(f"Unknown statement format: {fmt!r}")

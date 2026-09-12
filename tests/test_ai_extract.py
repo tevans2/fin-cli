@@ -100,6 +100,23 @@ def test_call_openai_without_key_is_a_clear_error(monkeypatch, tmp_path):
     assert "OPENAI_API_KEY" in str(exc.value)
 
 
+def test_pdf_extension_routes_to_pdf_even_under_csv_profile(monkeypatch, tmp_path):
+    # investec/tyme built-ins are format="csv"; a .pdf must still take the PDF path
+    called = {}
+
+    def boom(path, profile):
+        called["pdf"] = True
+        raise StatementFormatError("no line_regex")
+
+    monkeypatch.setattr("finance.statements.pdf_parser.parse_pdf", boom)
+    csv_profile = StatementProfile(name="investec", id_prefix="investec-csv", format="csv")
+    pdf = tmp_path / "s.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+    with pytest.raises(StatementFormatError):
+        parse_statement(pdf, csv_profile, ai_fallback=False)
+    assert called.get("pdf") is True
+
+
 def test_key_is_read_from_a_dotenv_file(monkeypatch, tmp_path):
     from finance.config import ensure_env_loaded
 
