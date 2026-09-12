@@ -72,6 +72,13 @@ class DataPaths:
     def transaction_file(self, bank: str, year: int) -> Path:
         return self.transactions_dir / bank / f"{year}.jsonl"
 
+    @property
+    def budget_groups_config(self) -> Path:
+        return self.config_dir / "budget-groups.yaml"
+
+    def budget_journal(self, year: int) -> Path:
+        return self.journal_dir / f"budget-{year}.journal"
+
     def generated_journal(self, bank: str) -> Path:
         return self.generated_journal_dir / f"{bank}.journal"
 
