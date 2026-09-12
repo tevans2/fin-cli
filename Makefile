@@ -5,20 +5,13 @@ ACCOUNT := checking
 MONTH   := this month
 export FIN_DATA_DIR := $(HOME)/private/finance-data
 
-.PHONY: dashboard web \
-        sync categorize run \
+.PHONY: sync rules-apply \
         bs is expenses unknowns review \
         spend-month spend-trend top-spend monthly \
         net-worth net-income \
-        budget budget-vs budget-export \
+        budget budget-vs \
         investments inv-list \
         help
-
-dashboard:   ## Launch the Streamlit finance dashboard
-	$(VENV)/bin/streamlit run finance/dashboard/Overview.py
-
-web:         ## Launch the browser UI (FastAPI + HTMX)
-	$(FIN) web $(if $(PORT),--port $(PORT),)
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ { printf "  %-14s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -28,10 +21,8 @@ help: ## Show this help
 sync:        ## Fetch latest transactions from bank (BANK=investec ACCOUNT=checking)
 	$(FIN) sync $(BANK) --account $(ACCOUNT)
 
-categorize:  ## Interactively categorize unknown transactions (TUI)
-	$(FIN) categorize $(BANK)
-
-run: sync categorize  ## sync then categorize (default workflow)
+rules-apply: ## Auto-categorize transactions by applying rules.yaml
+	$(FIN) rules-apply $(BANK)
 
 # ── named reports ─────────────────────────────────────────────────────────────
 
@@ -85,9 +76,6 @@ budget:      ## Show the budget (YEAR=2027; VIEW=groups|accounts|performance)
 
 budget-vs:   ## Current spending vs the budget (MONTHS=1)
 	$(FIN) budget compare $(if $(MONTHS),--months $(MONTHS),) $(if $(YEAR),--year $(YEAR),)
-
-budget-export: ## Regenerate the shareable budget spreadsheet, page and PDF into other/
-	$(FIN) budget export $(if $(YEAR),--year $(YEAR),)
 
 net-worth:   ## Assets minus liabilities snapshot
 	$(FIN) hledger bal assets liabilities --tree

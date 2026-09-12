@@ -1,8 +1,0 @@
-<div id="report-output">
-  {% if params.report == 'transactions' %}
-    {% include "_report_txns.html" %}
-  {% else %}
-    <div class="report-cmd">{{ command }}</div>
-    <pre class="report">{{ output }}</pre>
-  {% endif %}
-</div>

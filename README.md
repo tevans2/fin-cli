@@ -33,15 +33,20 @@ This keeps the system easier to reason about than a raw-import-first workflow wh
 - migrate existing V1 journal data into V2 canonical storage
 - sync Investec transactions into canonical JSONL files
 - import Investec and Tyme CSV statements into canonical JSONL files (with balance-chain validation)
-- apply categorization rules
-- review and manually categorize unknown transactions
-- split transactions across multiple categories in the TUI (`x` key)
+- apply categorization rules (`config/rules.yaml`)
+- list uncategorized transactions for review
 - generate `hledger` journals from canonical transaction data
+- compare live bank-API transactions against the local journal
 - track investment valuations and generate unrealised gains/losses entries
 - build annual budgets and compare actual spending against them
 - run `hledger` reports through the CLI
-- explore finances in a Streamlit dashboard or a FastAPI/HTMX web UI
 - run basic git workflows against the separate data repo
+
+> **Interfaces:** the interactive TUIs, Streamlit dashboard, and web UI have been
+> removed. The project is currently focused on making the backend/core (especially
+> classification and analysis) complete and correct before a new frontend is designed.
+> Categorization is rules-driven for now (`fin rules-apply`); day-to-day viewing is
+> done through `hledger` and the `fin`/`make` report commands.
 
 ---
 
@@ -97,15 +102,11 @@ A `Makefile` is included for common workflows. Run `make help` to list all targe
 
 ```
   help           Show this help
-  dashboard      Launch the Streamlit finance dashboard
-  web            Launch the browser UI (FastAPI + HTMX)
   sync           Fetch latest transactions from bank (BANK=investec ACCOUNT=checking)
-  categorize     Interactively categorize unknown transactions (TUI)
-  run            sync then categorize (default workflow)
+  rules-apply    Auto-categorize transactions by applying rules.yaml
   monthly        Full monthly overview through a pager (MONTH="this month")
   budget         Show the budget (YEAR=2027; VIEW=groups|accounts|performance)
   budget-vs      Current spending vs the budget (MONTHS=1)
-  budget-export  Regenerate the shareable budget spreadsheet, page and PDF
   bs             Balance sheet
   is             Income statement
   expenses       Expense balances
@@ -143,8 +144,7 @@ make run BANK=tyme ACCOUNT=checking
 Using your existing virtualenv:
 
 ```bash
-pip install -e .          # core CLI + Streamlit dashboard
-pip install -e '.[web]'   # also install the FastAPI/HTMX web UI deps
+pip install -e .
 ```
 
 After installation, the CLI command is:
@@ -186,12 +186,11 @@ fin compare investec --account checking --begin 2026-03-10 --end 2026-04-09
 fin sync investec --account savings --begin 2026-01-01 --end 2026-04-09
 ```
 
-### 4. Review or categorize transactions
+### 4. Review and categorize transactions
 
 ```bash
-fin review investec
-fin categorize investec        # TUI (default)
-fin categorize investec --cli  # line-by-line fallback
+fin rules-apply investec   # auto-categorize using config/rules.yaml
+fin review investec        # list what's still uncategorized
 ```
 
 ### 5. Commit changes in the data repo
@@ -254,11 +253,9 @@ fin import investec path/to/statement.csv --account savings   # balance-chain va
 ### Review and categorization
 
 ```bash
-fin review investec
-fin categorize investec        # TUI (default)
-fin categorize investec --cli  # line-by-line fallback
-fin rules-list
-fin rules-apply investec
+fin rules-list                 # show active rules
+fin rules-apply investec       # auto-categorize by rules
+fin review investec            # list transactions still uncategorized
 ```
 
 ### Reporting
@@ -301,15 +298,6 @@ fin budget show                       # grouped budget (defaults to next year)
 fin budget show --accounts            # raw per-account goals
 fin budget compare --months 3         # actual spending vs budget over trailing months
 fin budget performance --depth 2      # hledger --budget report, by month
-fin budget export --year 2027         # write xlsx + html + pdf into ./other
-```
-
-### Browser and dashboard UIs
-
-```bash
-fin web                               # FastAPI + HTMX UI at http://127.0.0.1:8000
-fin web --port 8080 --reload          # dev mode
-make dashboard                        # Streamlit dashboard
 ```
 
 ### Data repo git helpers
@@ -330,14 +318,16 @@ fin data-push
 
 ```bash
 fin sync investec
-fin review investec
-fin categorize investec
+fin rules-apply investec
+fin review investec              # inspect anything still uncategorized
 fin reports bs
 fin data-commit -m "Sync latest transactions"
 fin data-push
 ```
 
-In the TUI categorization flow, the account picker is focused by default. Use `Ctrl-j` / `Ctrl-k` (or `j` / `k`) to move in the account picker. Press `Esc` to switch into action mode, where keybindings for alias, skip, and quit are shown.
+Transactions that no rule matches stay as `expenses:unknown` / `income:unknown`.
+Add or refine rules in `config/rules.yaml` and re-run `fin rules-apply`. A richer
+interactive categorization flow is planned once the core is complete.
 
 ### Initial migration workflow
 

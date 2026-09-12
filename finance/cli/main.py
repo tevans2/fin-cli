@@ -15,7 +15,8 @@ from finance.services.investments import build_investment_journal, get_history, 
 from finance.services.journal import build_bank_journal
 from finance.services.migrate import migrate_v1
 from finance.services.reports import run_cashflow, run_hledger, run_investments, run_named_report
-from finance.services.review import categorize_unknowns_interactively, review_unknowns
+from finance.services.compare import build_compare_dataset
+from finance.services.review import review_unknowns
 from finance.services.rules import apply_rules, list_rules
 from finance.services.sync import sync_bank
 
@@ -207,20 +208,6 @@ def cmd_review(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_categorize(args: argparse.Namespace) -> int:
-    try:
-        if args.cli:
-            result = categorize_unknowns_interactively(args.bank, args.category)
-        else:
-            from finance.tui.categorize import run_categorize_tui
-            result = run_categorize_tui(args.bank, args.category)
-    except Exception as exc:
-        print(f"ERROR: {exc}")
-        return 1
-    print(f"Updated: {result['updated']}  Skipped: {result['skipped']}  Aliases created: {result['aliases_created']}  Remaining unknowns: {result['remaining']}")
-    return 0
-
-
 def cmd_rules_list(_: argparse.Namespace) -> int:
     try:
         rules = list_rules()
@@ -265,8 +252,7 @@ def cmd_reports(args: argparse.Namespace) -> int:
 
 def cmd_compare(args: argparse.Namespace) -> int:
     try:
-        from finance.tui.compare import run_compare_tui
-        result = run_compare_tui(
+        ds = build_compare_dataset(
             args.bank,
             account=args.account,
             begin=args.begin,
@@ -277,14 +263,33 @@ def cmd_compare(args: argparse.Namespace) -> int:
     except Exception as exc:
         print(f"ERROR: {exc}")
         return 1
+
+    api_keys = {r.key for r in ds.api_rows}
+    journal_keys = {r.key for r in ds.journal_rows}
+    only_api = [r for r in ds.api_rows if r.key not in journal_keys]
+    only_journal = [r for r in ds.journal_rows if r.key not in api_keys]
+
+    print(f"Compare {ds.bank}[{ds.account}]  {ds.start_date} -> {ds.end_date}  date_mode={ds.date_mode}")
     print(
-        f"Compared {result['bank']}[{result['account']}]: api={result['api_count']} journal={result['journal_count']} "
-        f"date_mode={result['date_mode']} range={result['start_date']}->{result['end_date']} offset={result['offset']}"
+        f"  api rows={len(ds.api_rows)}  journal rows={len(ds.journal_rows)}  "
+        f"matched={len(ds.api_rows) - len(only_api)}"
     )
     print(
-        f"Balances: api_current={result['api_current_balance']} api_available={result['api_available_balance']} "
-        f"journal_end={result['journal_balance']}"
+        f"  balances: api_current={ds.api_current_balance} api_available={ds.api_available_balance} "
+        f"journal_end={ds.journal_balance} ({ds.journal_balance_label})"
     )
+
+    def _dump(title: str, rows: list) -> None:
+        print(f"\n{title} ({len(rows)}):")
+        for row in sorted(rows, key=lambda r: (r.date, r.amount)):
+            print(f"  {row.date}  {row.amount:>12} {row.currency}  {row.label}")
+
+    if only_api:
+        _dump("Only in bank API (missing locally)", only_api)
+    if only_journal:
+        _dump("Only in local journal (not on API)", only_journal)
+    if not only_api and not only_journal:
+        print("\nAll rows matched.")
     return 0
 
 
@@ -350,17 +355,6 @@ def cmd_investment_build(_: argparse.Namespace) -> int:
     print(f"Built investments journal: {result['output']}")
     if result["accounts"]:
         print(f"Accounts: {', '.join(result['accounts'])}")
-    return 0
-
-
-def cmd_web(args: argparse.Namespace) -> int:
-    try:
-        import uvicorn
-    except ImportError:
-        print("ERROR: web deps missing. Install with: pip install -e '.[web]'")
-        return 1
-    print(f"Serving finance UI at http://{args.host}:{args.port}  (Ctrl-C to stop)")
-    uvicorn.run("finance.web.app:app", host=args.host, port=args.port, reload=args.reload)
     return 0
 
 
@@ -449,36 +443,6 @@ def cmd_budget_performance(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_budget_export(args: argparse.Namespace) -> int:
-    year = _budget_year(args)
-    try:
-        budget = budget_service.load_budget(year)
-    except budget_service.BudgetError as exc:
-        print(f"ERROR: {exc}")
-        return 1
-
-    out_dir = Path(args.out).expanduser() if args.out else Path.cwd() / "other"
-    stem = args.stem or f"{year}-budget"
-    written: list[Path] = []
-    try:
-        written.append(budget_service.export_xlsx(budget, out_dir / f"{stem}.xlsx"))
-        html_path = budget_service.export_html(budget, out_dir / f"{stem}.html")
-        written.append(html_path)
-        if not args.no_pdf:
-            written.append(budget_service.export_pdf(html_path, out_dir / f"{stem}.pdf"))
-    except budget_service.BudgetError as exc:
-        print(f"ERROR: {exc}")
-        for path in written:
-            print(f"  wrote {path}")
-        return 1
-
-    for path in written:
-        print(f"wrote {path}")
-    print(f"\nexpenses {budget.expense_total:,.0f} · income {budget.income_total:,.0f} "
-          f"· surplus {budget.surplus:,.0f}")
-    return 0
-
-
 def cmd_data_status(_: argparse.Namespace) -> int:
     try:
         return git_status()
@@ -564,13 +528,6 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--category", choices=["expenses", "income", "both"], default="both")
     review.set_defaults(func=cmd_review)
 
-    categorize = sub.add_parser("categorize", help="Interactively categorize unknown canonical transactions")
-    categorize.add_argument("bank", help="Bank/provider name, eg investec")
-    categorize.add_argument("--category", choices=["expenses", "income", "both"], default="both")
-    categorize.add_argument("--cli", action="store_true", help="Use the line-by-line CLI review flow instead of the TUI")
-    categorize.add_argument("--tui", action="store_true", help="Use the TUI review flow (default)")
-    categorize.set_defaults(func=cmd_categorize)
-
     rules = sub.add_parser("rules-list", help="List active categorization rules")
     rules.set_defaults(func=cmd_rules_list)
 
@@ -627,7 +584,7 @@ def build_parser() -> argparse.ArgumentParser:
     budget = sub.add_parser("budget", help="2027-style budget goals from the budget journal")
     budget_sub = budget.add_subparsers(dest="budget_command", required=True)
 
-    b_show = budget_sub.add_parser("show", help="Print the budget, grouped as the exports show it")
+    b_show = budget_sub.add_parser("show", help="Print the budget, grouped by category")
     b_show.add_argument("--year", type=int, help="Budget year (default: next year)")
     b_show.add_argument("--accounts", action="store_true", help="List raw per-account goals instead")
     b_show.set_defaults(func=cmd_budget_show)
@@ -641,19 +598,6 @@ def build_parser() -> argparse.ArgumentParser:
     b_perf.add_argument("--year", type=int, help="Budget year (default: next year)")
     b_perf.add_argument("--depth", type=int, help="Roll accounts up to this depth")
     b_perf.set_defaults(func=cmd_budget_performance)
-
-    b_exp = budget_sub.add_parser("export", help="Write the shareable spreadsheet, page and PDF")
-    b_exp.add_argument("--year", type=int, help="Budget year (default: next year)")
-    b_exp.add_argument("--out", help="Output directory (default: ./other)")
-    b_exp.add_argument("--stem", help="Filename stem (default: <year>-budget)")
-    b_exp.add_argument("--no-pdf", action="store_true", help="Skip the PDF render")
-    b_exp.set_defaults(func=cmd_budget_export)
-
-    web = sub.add_parser("web", help="Launch the browser UI (FastAPI + HTMX)")
-    web.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
-    web.add_argument("--port", type=int, default=8000, help="Bind port (default: 8000)")
-    web.add_argument("--reload", action="store_true", help="Auto-reload on code changes (dev)")
-    web.set_defaults(func=cmd_web)
 
     data_status = sub.add_parser("data-status", help="Run git status in the FIN_DATA_DIR repo")
     data_status.set_defaults(func=cmd_data_status)
