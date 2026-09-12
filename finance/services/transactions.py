@@ -20,6 +20,21 @@ def load_bank_transactions(bank: str) -> list[TransactionRecord]:
     return sorted(records, key=lambda r: (r.date, r.id))
 
 
+def load_all_transactions() -> list[TransactionRecord]:
+    config = load_app_config()
+    txn_dir = config.paths.transactions_dir
+    if not txn_dir.exists():
+        return []
+    store = JsonlTransactionStore(txn_dir)
+    records: list[TransactionRecord] = []
+    for bank_dir in sorted(txn_dir.iterdir()):
+        if not bank_dir.is_dir() or bank_dir.name.startswith("."):
+            continue
+        for path in sorted(bank_dir.glob("*.jsonl")):
+            records.extend(store.read_file(path))
+    return sorted(records, key=lambda r: (r.date, r.id))
+
+
 def filter_unknown_transactions(bank: str, category: str = "both") -> list[TransactionRecord]:
     records = load_bank_transactions(bank)
     if category == "expenses":

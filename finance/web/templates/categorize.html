@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}categorize · {{ bank }}{% endblock %}
+{% block nav %}<span class="dim">categorize / {{ bank }}</span>{% endblock %}
+{% block content %}
+<script id="accounts-data" type="application/json">{{ accounts | tojson }}</script>
+
+<section
+  id="card"
+  class="panel card"
+  data-bank="{{ bank }}"
+  hx-get="/categorize/{{ bank }}/card"
+  hx-trigger="load"
+  hx-swap="innerHTML">
+  <p class="dim">loading&hellip;</p>
+</section>
+
+<!-- Alias modal -->
+<div id="alias-modal" class="modal" hidden>
+  <form
+    class="modal-box"
+    hx-post="/categorize/{{ bank }}/alias"
+    hx-target="#card"
+    hx-swap="innerHTML"
+    onsubmit="closeModal('alias-modal')">
+    <h2>alias</h2>
+    <p class="dim" id="alias-original"></p>
+    <input type="hidden" name="txn_id" id="alias-txn">
+    <input type="hidden" name="description" id="alias-desc">
+    <input type="text" name="alias" id="alias-input" placeholder="Alias label" autocomplete="off">
+    <div class="modal-actions">
+      <span class="dim">Enter = save · Esc = cancel</span>
+    </div>
+  </form>
+</div>
+
+<!-- Split modal -->
+<div id="split-modal" class="modal" hidden>
+  <form
+    class="modal-box"
+    hx-post="/categorize/{{ bank }}/split"
+    hx-target="#card"
+    hx-swap="innerHTML"
+    onsubmit="closeModal('split-modal')">
+    <h2>split</h2>
+    <p class="dim">Total <span id="split-total">0</span> · Remaining <span id="split-remaining">0</span></p>
+    <input type="hidden" name="txn_id" id="split-txn">
+    <div id="split-rows"></div>
+    <button type="button" class="btn btn-ghost" onclick="addSplitRow()">+ add row</button>
+    <div class="modal-actions">
+      <button type="submit" class="btn">save split</button>
+      <span class="dim">Esc = cancel</span>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}investments{% endblock %}
+{% block content %}
+<section class="panel">
+  <h1>investments</h1>
+  {% if rows %}
+  <table class="txns">
+    <thead>
+      <tr><th>name</th><th class="num">baseline</th><th class="num">value</th><th class="num">gain</th><th class="num">%</th><th>as of</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.name }}<span class="dim"> · {{ r.currency }}</span></td>
+        <td class="num dim">{{ r.baseline | money }}</td>
+        <td class="num">{{ r.value | money }}</td>
+        <td class="num {{ 'neg' if r.gain < 0 else 'pos' }}">{{ r.gain | money }}</td>
+        <td class="num {{ 'neg' if r.gain < 0 else 'pos' }}">{{ r.gain_pct }}%</td>
+        <td class="dim nowrap">{{ r.date }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="dim">ZAR holdings total: {{ total_zar | money }} ZAR (non-ZAR shown in native currency)</p>
+  {% else %}
+  <p class="dim">No investments recorded. Use <code>fin investment-set</code> to add valuations.</p>
+  {% endif %}
+</section>
+{% endblock %}

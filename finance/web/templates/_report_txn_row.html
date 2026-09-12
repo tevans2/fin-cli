@@ -1,0 +1,18 @@
+{% if r %}
+<tr id="row-{{ r.id }}"{% if saved %} class="row-saved"{% endif %}>
+  <td class="dim nowrap">{{ r.date }}</td>
+  <td>{{ r.name }}<span class="dim"> · {{ r.bank }}:{{ r.account }}</span></td>
+  <td>
+    {% if r.category == 'split' %}
+    <span class="mono dim">split</span>
+    {% else %}
+    <input class="row-acct mono {{ 'dim' if 'unknown' in r.category }}" name="category"
+           list="accts" value="{{ r.category }}" autocomplete="off"
+           hx-post="/reports/recategorize"
+           hx-vals='{"bank": {{ r.bank | tojson }}, "txn_id": {{ r.id | tojson }}}'
+           hx-target="#row-{{ r.id }}" hx-swap="outerHTML" hx-trigger="change">
+    {% endif %}
+  </td>
+  <td class="num {{ 'neg' if r.amount < 0 else 'pos' }}">{{ r.amount | money }}</td>
+</tr>
+{% endif %}

@@ -1,0 +1,20 @@
+<div class="txn-summary">
+  <span>{{ view.shown }} of {{ view.count }} shown</span>
+  <span class="pos">in {{ view.total_in | money }}</span>
+  <span class="neg">out {{ view.total_out | money }}</span>
+  <span class="dim">· edit an account cell to recategorize</span>
+</div>
+<table class="txns">
+  <thead>
+    <tr><th>date</th><th>description</th><th>account</th><th class="num">amount</th></tr>
+  </thead>
+  <tbody>
+    {% for r in view.rows %}{% include "_report_txn_row.html" %}
+    {% else %}
+    <tr><td colspan="4" class="dim">No transactions match these filters.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if view.count > view.limit %}
+<p class="dim">Showing first {{ view.limit }}. Narrow the filters to see the rest.</p>
+{% endif %}

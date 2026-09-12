@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}finance{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a href="/" class="brand">fin</a>
+    <nav class="topnav">
+      <a href="/">overview</a>
+      <a href="/transactions">transactions</a>
+      <a href="/investments">investments</a>
+      <a href="/reports">reports</a>
+      <a href="/budget">budget</a>
+    </nav>
+    <span class="topctx">{% block nav %}{% endblock %}</span>
+  </header>
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

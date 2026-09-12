@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}reports{% endblock %}
+{% block content %}
+<section class="panel">
+  <h1>reports</h1>
+  <script type="application/json" id="accounts-data">{{ accounts_json | safe }}</script>
+  {% set p = params %}
+  <form class="filters report-controls" hx-get="/reports" hx-target="#report-output"
+        hx-select="#report-output" hx-swap="outerHTML"
+        hx-trigger="change, search, keyup delay:400ms from:[name='accounts']" hx-push-url="true">
+    <label>type
+      <select name="report">
+        {% for key, label, _cmd, _b in types %}
+        <option value="{{ key }}" {{ 'selected' if key == p.report }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>accounts
+      <input type="search" name="accounts" value="{{ p.accounts }}"
+             placeholder="e.g. expenses:lifestyle" autocomplete="off">
+    </label>
+    <label>scope
+      <select name="scope">
+        <option value="all" {{ 'selected' if p.scope == 'all' }}>all</option>
+        <option value="cashflow" {{ 'selected' if p.scope == 'cashflow' }}>cashflow</option>
+        <option value="investments" {{ 'selected' if p.scope == 'investments' }}>investments</option>
+      </select>
+    </label>
+    <label>period
+      <select name="period">
+        <option value="" {{ 'selected' if p.period == '' }}>none</option>
+        <option value="W" {{ 'selected' if p.period == 'W' }}>weekly</option>
+        <option value="M" {{ 'selected' if p.period == 'M' }}>monthly</option>
+        <option value="Q" {{ 'selected' if p.period == 'Q' }}>quarterly</option>
+        <option value="Y" {{ 'selected' if p.period == 'Y' }}>yearly</option>
+      </select>
+    </label>
+    <label>from <input type="date" name="begin" value="{{ p.begin }}"></label>
+    <label>to <input type="date" name="end" value="{{ p.end }}"></label>
+    <label>depth <input type="number" name="depth" min="1" max="9" value="{{ p.depth }}"></label>
+    <label>layout
+      <select name="layout">
+        <option value="tree" {{ 'selected' if p.layout == 'tree' }}>tree</option>
+        <option value="flat" {{ 'selected' if p.layout == 'flat' }}>flat</option>
+      </select>
+    </label>
+    <label class="chk"><input type="checkbox" name="sort" value="on" {{ 'checked' if p.sort }}> sort by amount</label>
+    <label class="chk"><input type="checkbox" name="value" value="on" {{ 'checked' if p.value }}> convert to ZAR</label>
+  </form>
+
+  {% include "_report_output.html" %}
+</section>
+{% endblock %}
