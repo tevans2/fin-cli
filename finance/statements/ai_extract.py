@@ -91,9 +91,13 @@ def rows_from_ai_payload(payload: dict, profile: StatementProfile) -> list[State
 
 
 def _call_openai(text: str, *, currency: str, model: str) -> dict:
+    from finance.config import ensure_env_loaded
+
+    ensure_env_loaded()  # pick up OPENAI_API_KEY from ./.env or FIN_DATA_DIR/config/.env
     if not os.getenv("OPENAI_API_KEY"):
         raise StatementFormatError(
-            "AI fallback needs OPENAI_API_KEY (set it in your environment or FIN_DATA_DIR/config/.env)"
+            "AI fallback needs OPENAI_API_KEY — set it in your environment, ./.env, "
+            "or FIN_DATA_DIR/config/.env"
         )
     try:
         from openai import OpenAI
@@ -119,6 +123,9 @@ def _call_openai(text: str, *, currency: str, model: str) -> dict:
 
 def extract_pdf_rows(path: Path, profile: StatementProfile, *, reason: str = "") -> list[StatementRow]:
     """Extract transactions from a PDF via OpenAI (deterministic parse having failed)."""
+    from finance.config import ensure_env_loaded
+
+    ensure_env_loaded()
     model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
     text = extract_pdf_text(Path(path))
     if not text.strip():

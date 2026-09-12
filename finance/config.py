@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
-import os
+
 import yaml
 
-from .paths import DataPaths, get_data_paths
+from .paths import DataDirError, DataPaths, get_data_paths
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,21 @@ def _load_env(paths: DataPaths) -> None:
     ]
     for candidate in candidates:
         _load_env_file(candidate)
+
+
+def ensure_env_loaded() -> None:
+    """Load .env files into os.environ without requiring a full app config.
+
+    Reads ``./.env`` and ``FIN_DATA_DIR/config/.env`` (if FIN_DATA_DIR is set),
+    using setdefault so real environment variables always win. Safe to call
+    repeatedly. Used to pick up secrets like OPENAI_API_KEY from a .env file.
+    """
+    _load_env_file(Path.cwd() / ".env")
+    try:
+        data_root = get_data_paths().root
+    except DataDirError:
+        return
+    _load_env_file(data_root / "config" / ".env")
 
 
 def load_app_config() -> AppConfig:

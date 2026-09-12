@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from finance.statements.ai_extract import _call_openai, rows_from_ai_payload
@@ -88,8 +90,25 @@ def test_ai_fallback_output_is_still_balance_checked(monkeypatch, tmp_path):
         parse_statement(pdf, _pdf_profile(), ai_fallback=True)
 
 
-def test_call_openai_without_key_is_a_clear_error(monkeypatch):
+def test_call_openai_without_key_is_a_clear_error(monkeypatch, tmp_path):
+    # isolate from any real .env / FIN_DATA_DIR so env loading finds no key
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("FIN_DATA_DIR", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(StatementFormatError) as exc:
         _call_openai("some text", currency="ZAR", model="gpt-4o-mini")
     assert "OPENAI_API_KEY" in str(exc.value)
+
+
+def test_key_is_read_from_a_dotenv_file(monkeypatch, tmp_path):
+    from finance.config import ensure_env_loaded
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("FIN_DATA_DIR", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    (tmp_path / ".env").write_text("OPENAI_API_KEY=sk-test-from-dotenv\n")
+    try:
+        ensure_env_loaded()
+        assert os.environ.get("OPENAI_API_KEY") == "sk-test-from-dotenv"
+    finally:
+        os.environ.pop("OPENAI_API_KEY", None)
