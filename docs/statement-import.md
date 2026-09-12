@@ -114,6 +114,21 @@ running balance then fails to reconcile, a transaction line was missed and the
 import is refused. Multi-line wrapped descriptions aren't handled yet — one
 transaction per line.
 
+## Password-protected PDFs
+
+Many banks email encrypted PDFs. Put the password in an environment variable named
+`<BANK>_DOC_CODE` (the bank name uppercased, non-alphanumerics become `_`) — e.g.
+`INVESTEC_DOC_CODE`, `FNB_DOC_CODE`. It can live in your `.env`:
+
+```
+INVESTEC_DOC_CODE=your-statement-password
+```
+
+The importer reads it automatically and unlocks the PDF on open. It applies to
+both the normal PDF parse and the AI fallback. If a PDF is encrypted and no
+matching `<BANK>_DOC_CODE` is set, the import fails with a message telling you
+which variable to set.
+
 ## AI fallback for stubborn PDFs
 
 When a PDF has no working `pdf.line_regex`, or the parsed rows fail the balance

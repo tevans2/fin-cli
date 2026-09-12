@@ -99,19 +99,31 @@ def rows_from_lines(lines: list[str], profile: StatementProfile) -> list[Stateme
     return rows
 
 
-def extract_lines(path: Path) -> list[str]:
+def extract_lines(path: Path, password: str | None = None) -> list[str]:
     try:
         import pdfplumber
     except ImportError as exc:  # pragma: no cover - dependency guard
         raise StatementFormatError("PDF import needs pdfplumber (pip install -e '.[dev]' or the base deps)") from exc
 
+    try:
+        pdf = pdfplumber.open(str(path), password=password or "")
+    except Exception as exc:
+        hint = (
+            "wrong password"
+            if password
+            else "it may be password-protected — set <BANK>_DOC_CODE in your environment or .env"
+        )
+        raise StatementFormatError(f"Could not open PDF ({hint}): {exc}") from exc
+
     lines: list[str] = []
-    with pdfplumber.open(str(path)) as pdf:
+    with pdf:
         for page in pdf.pages:
             text = page.extract_text() or ""
             lines.extend(line.strip() for line in text.splitlines() if line.strip())
     return lines
 
 
-def parse_pdf(path: Path, profile: StatementProfile) -> tuple[list[StatementRow], str | None]:
-    return rows_from_lines(extract_lines(Path(path)), profile), None
+def parse_pdf(
+    path: Path, profile: StatementProfile, password: str | None = None
+) -> tuple[list[StatementRow], str | None]:
+    return rows_from_lines(extract_lines(Path(path), password=password), profile), None

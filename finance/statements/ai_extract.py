@@ -51,10 +51,10 @@ Statement text:
 ---"""
 
 
-def extract_pdf_text(path: Path) -> str:
+def extract_pdf_text(path: Path, password: str | None = None) -> str:
     from finance.statements.pdf_parser import extract_lines
 
-    return "\n".join(extract_lines(Path(path)))
+    return "\n".join(extract_lines(Path(path), password=password))
 
 
 def rows_from_ai_payload(payload: dict, profile: StatementProfile) -> list[StatementRow]:
@@ -121,13 +121,15 @@ def _call_openai(text: str, *, currency: str, model: str) -> dict:
         raise StatementFormatError(f"AI returned invalid JSON: {exc}") from exc
 
 
-def extract_pdf_rows(path: Path, profile: StatementProfile, *, reason: str = "") -> list[StatementRow]:
+def extract_pdf_rows(
+    path: Path, profile: StatementProfile, *, reason: str = "", password: str | None = None
+) -> list[StatementRow]:
     """Extract transactions from a PDF via OpenAI (deterministic parse having failed)."""
     from finance.config import ensure_env_loaded
 
     ensure_env_loaded()
     model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
-    text = extract_pdf_text(Path(path))
+    text = extract_pdf_text(Path(path), password=password)
     if not text.strip():
         raise StatementFormatError("Could not extract any text from the PDF to send to the AI")
     print(f"PDF parse failed ({reason}); sending statement text to OpenAI ({model}) to extract transactions…")

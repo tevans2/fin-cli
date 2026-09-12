@@ -44,7 +44,7 @@ def test_rows_from_ai_payload_rejects_missing_amount():
 
 
 def test_ai_fallback_not_used_without_flag(monkeypatch, tmp_path):
-    def boom(path, profile):
+    def boom(path, profile, password=None):
         raise StatementFormatError("no line_regex")
 
     monkeypatch.setattr("finance.statements.pdf_parser.parse_pdf", boom)
@@ -57,12 +57,12 @@ def test_ai_fallback_not_used_without_flag(monkeypatch, tmp_path):
 def test_ai_fallback_extracts_and_validates(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "finance.statements.pdf_parser.parse_pdf",
-        lambda path, profile: (_ for _ in ()).throw(StatementFormatError("regex matched nothing")),
+        lambda path, profile, password=None: (_ for _ in ()).throw(StatementFormatError("regex matched nothing")),
     )
     ai_rows = rows_from_ai_payload(GOOD_PAYLOAD, _pdf_profile())
     monkeypatch.setattr(
         "finance.statements.ai_extract.extract_pdf_rows",
-        lambda path, profile, reason="": ai_rows,
+        lambda path, profile, reason="", password=None: ai_rows,
     )
     pdf = tmp_path / "x.pdf"
     pdf.write_bytes(b"%PDF-1.4")
@@ -74,7 +74,7 @@ def test_ai_fallback_extracts_and_validates(monkeypatch, tmp_path):
 def test_ai_fallback_output_is_still_balance_checked(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "finance.statements.pdf_parser.parse_pdf",
-        lambda path, profile: (_ for _ in ()).throw(StatementFormatError("nope")),
+        lambda path, profile, password=None: (_ for _ in ()).throw(StatementFormatError("nope")),
     )
     bad_rows = [
         StatementRow(date="2026-01-01", description="a", amount="-50.00", balance="-50.00"),
@@ -82,7 +82,7 @@ def test_ai_fallback_output_is_still_balance_checked(monkeypatch, tmp_path):
     ]
     monkeypatch.setattr(
         "finance.statements.ai_extract.extract_pdf_rows",
-        lambda path, profile, reason="": bad_rows,
+        lambda path, profile, reason="", password=None: bad_rows,
     )
     pdf = tmp_path / "x.pdf"
     pdf.write_bytes(b"%PDF-1.4")
@@ -104,7 +104,7 @@ def test_pdf_extension_routes_to_pdf_even_under_csv_profile(monkeypatch, tmp_pat
     # investec/tyme built-ins are format="csv"; a .pdf must still take the PDF path
     called = {}
 
-    def boom(path, profile):
+    def boom(path, profile, password=None):
         called["pdf"] = True
         raise StatementFormatError("no line_regex")
 

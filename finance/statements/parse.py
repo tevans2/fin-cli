@@ -60,12 +60,14 @@ def parse_statement(
     profile: StatementProfile,
     *,
     ai_fallback: bool = False,
+    pdf_password: str | None = None,
 ) -> tuple[list[StatementRow], StatementSummary]:
     """Parse a statement file and run the balance-chain accuracy gate.
 
-    For PDFs, if parsing or the balance chain fails and ``ai_fallback`` is set,
-    the statement text is sent to OpenAI to extract transactions, and that output
-    is validated by the same balance chain before it is trusted.
+    ``pdf_password`` unlocks an encrypted PDF (from ``<BANK>_DOC_CODE``). For PDFs,
+    if parsing or the balance chain fails and ``ai_fallback`` is set, the statement
+    text is sent to OpenAI to extract transactions, and that output is validated by
+    the same balance chain before it is trusted.
     """
     path = Path(path)
     fmt = resolve_format(path, profile)
@@ -78,14 +80,14 @@ def parse_statement(
         from finance.statements.pdf_parser import parse_pdf
 
         try:
-            rows, account_name = parse_pdf(path, profile)
+            rows, account_name = parse_pdf(path, profile, password=pdf_password)
             return finalize(rows, profile, account_name)
         except (StatementFormatError, BalanceChainError) as exc:
             if not ai_fallback:
                 raise
             from finance.statements.ai_extract import extract_pdf_rows
 
-            rows = extract_pdf_rows(path, profile, reason=str(exc))
+            rows = extract_pdf_rows(path, profile, reason=str(exc), password=pdf_password)
             return finalize(rows, profile, None)
 
     raise StatementFormatError(f"Unknown statement format: {fmt!r}")

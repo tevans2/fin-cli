@@ -12,12 +12,14 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import os
+import re
 import shutil
 from collections import Counter, defaultdict
 from decimal import Decimal
 from pathlib import Path
 
-from finance.config import load_app_config
+from finance.config import ensure_env_loaded, load_app_config
 from finance.models.transaction import TransactionRecord, utc_now_iso
 from finance.services.journal import build_bank_journal
 from finance.services.ledger import resolve_ledger_account
@@ -27,6 +29,17 @@ from finance.statements.profile import StatementProfile, load_profile
 from finance.storage.alias_store import AliasStore, apply_aliases
 from finance.storage.jsonl_store import JsonlTransactionStore
 from finance.storage.rules_store import RulesStore, categorize_record
+
+
+def doc_code_env_var(bank: str) -> str:
+    """Name of the env var holding a bank's PDF password, eg investec -> INVESTEC_DOC_CODE."""
+    return re.sub(r"[^A-Z0-9]+", "_", bank.upper()).strip("_") + "_DOC_CODE"
+
+
+def get_doc_code(bank: str) -> str | None:
+    """Password for a bank's protected PDFs, from <BANK>_DOC_CODE (env or .env)."""
+    ensure_env_loaded()
+    return os.getenv(doc_code_env_var(bank)) or None
 
 
 def normalize_description(description: str) -> str:
@@ -134,7 +147,9 @@ def import_statement(
     if profile is None:
         profile = load_profile(bank, account)
 
-    rows, summary = parse_statement(source, profile, ai_fallback=ai_fallback)
+    rows, summary = parse_statement(
+        source, profile, ai_fallback=ai_fallback, pdf_password=get_doc_code(bank)
+    )
 
     config = load_app_config()
     rules = RulesStore(config.paths.rules_config).load()
