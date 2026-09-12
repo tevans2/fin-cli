@@ -32,13 +32,15 @@ This keeps the system easier to reason about than a raw-import-first workflow wh
 - initialize a separate finance data repo
 - migrate existing V1 journal data into V2 canonical storage
 - sync Investec transactions into canonical JSONL files
-- import Tyme CSV statements into canonical JSONL files
+- import Investec and Tyme CSV statements into canonical JSONL files (with balance-chain validation)
 - apply categorization rules
 - review and manually categorize unknown transactions
 - split transactions across multiple categories in the TUI (`x` key)
 - generate `hledger` journals from canonical transaction data
 - track investment valuations and generate unrealised gains/losses entries
+- build annual budgets and compare actual spending against them
 - run `hledger` reports through the CLI
+- explore finances in a Streamlit dashboard or a FastAPI/HTMX web UI
 - run basic git workflows against the separate data repo
 
 ---
@@ -95,9 +97,15 @@ A `Makefile` is included for common workflows. Run `make help` to list all targe
 
 ```
   help           Show this help
+  dashboard      Launch the Streamlit finance dashboard
+  web            Launch the browser UI (FastAPI + HTMX)
   sync           Fetch latest transactions from bank (BANK=investec ACCOUNT=checking)
   categorize     Interactively categorize unknown transactions (TUI)
   run            sync then categorize (default workflow)
+  monthly        Full monthly overview through a pager (MONTH="this month")
+  budget         Show the budget (YEAR=2027; VIEW=groups|accounts|performance)
+  budget-vs      Current spending vs the budget (MONTHS=1)
+  budget-export  Regenerate the shareable budget spreadsheet, page and PDF
   bs             Balance sheet
   is             Income statement
   expenses       Expense balances
@@ -135,7 +143,8 @@ make run BANK=tyme ACCOUNT=checking
 Using your existing virtualenv:
 
 ```bash
-pip install -e .
+pip install -e .          # core CLI + Streamlit dashboard
+pip install -e '.[web]'   # also install the FastAPI/HTMX web UI deps
 ```
 
 After installation, the CLI command is:
@@ -239,6 +248,7 @@ fin sync investec
 fin journal-build investec
 fin import tyme path/to/statement.csv --account checking --dry-run
 fin import tyme path/to/statement.csv --account checking
+fin import investec path/to/statement.csv --account savings   # balance-chain validated
 ```
 
 ### Review and categorization
@@ -281,6 +291,26 @@ fin investment-build
 ```
 
 See `docs/investments.md` for the full workflow including deposits and selling.
+
+### Budgeting
+
+Budgets live in the data repo as `config/budget-groups.yaml` and `journal/budget-<year>.journal`.
+
+```bash
+fin budget show                       # grouped budget (defaults to next year)
+fin budget show --accounts            # raw per-account goals
+fin budget compare --months 3         # actual spending vs budget over trailing months
+fin budget performance --depth 2      # hledger --budget report, by month
+fin budget export --year 2027         # write xlsx + html + pdf into ./other
+```
+
+### Browser and dashboard UIs
+
+```bash
+fin web                               # FastAPI + HTMX UI at http://127.0.0.1:8000
+fin web --port 8080 --reload          # dev mode
+make dashboard                        # Streamlit dashboard
+```
 
 ### Data repo git helpers
 

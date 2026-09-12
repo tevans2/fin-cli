@@ -33,6 +33,10 @@ runtime/
 tmp/
 cache/
 
+# Personal finance artifacts (budgets, statements, reports) — this repo stays code-only.
+# `fin budget export` writes here by default; never commit its contents.
+other/
+
 # Python
 __pycache__/
 *.pyc

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import argparse
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 from finance.paths import DataDirError, get_data_paths, validate_data_dir
+from finance.services import budget as budget_service
 from finance.services.data_repo import DataRepoError, git_commit, git_pull, git_push, git_status
+from finance.services.import_investec_csv import import_investec_csv
 from finance.services.import_statement import import_tyme_csv
 from finance.services.init_data import initialize_data_dir
 from finance.services.investments import build_investment_journal, get_history, list_investments, set_valuation
@@ -89,10 +93,43 @@ def cmd_journal_build(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_import(args: argparse.Namespace) -> int:
-    if args.bank != "tyme":
-        print("ERROR: only tyme CSV import is supported right now")
+def cmd_import_investec(args: argparse.Namespace) -> int:
+    try:
+        result = import_investec_csv(
+            args.file,
+            account=args.account,
+            dry_run=args.dry_run,
+            copy_raw=not args.no_copy_raw,
+        )
+    except Exception as exc:
+        print(f"ERROR: {exc}")
         return 1
+
+    statement = result["statement"]
+    print(
+        f"Imported {result['bank']}[{result['account']}]: rows={result['rows']} "
+        f"inserted={result['inserted']} already_present={result['skipped_already_present']} "
+        f"dry_run={result['dry_run']}"
+    )
+    if statement["date_range"]:
+        print(f"Posting dates: {statement['date_range']['start']} -> {statement['date_range']['end']}")
+    print(
+        f"Balance chain: OK  opening={statement['opening_balance']} closing={statement['closing_balance']} "
+        f"debits={statement['total_debits']} credits={statement['total_credits']}"
+    )
+    if result["counts_by_year"]:
+        per_year = ", ".join(f"{year}: {count}" for year, count in result["counts_by_year"].items())
+        print(f"Inserted by year: {per_year}")
+    if result["raw_copy"]:
+        print(f"Raw CSV copy: {result['raw_copy']}")
+    if result["journal_output"]:
+        print(f"Journal output: {result['journal_output']}")
+    return 0
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    if args.bank == "investec":
+        return cmd_import_investec(args)
     try:
         result = import_tyme_csv(
             args.file,
@@ -316,6 +353,132 @@ def cmd_investment_build(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_web(args: argparse.Namespace) -> int:
+    try:
+        import uvicorn
+    except ImportError:
+        print("ERROR: web deps missing. Install with: pip install -e '.[web]'")
+        return 1
+    print(f"Serving finance UI at http://{args.host}:{args.port}  (Ctrl-C to stop)")
+    uvicorn.run("finance.web.app:app", host=args.host, port=args.port, reload=args.reload)
+    return 0
+
+
+def _budget_year(args: argparse.Namespace) -> int:
+    return args.year or date.today().year + 1
+
+
+def cmd_budget_show(args: argparse.Namespace) -> int:
+    try:
+        budget = budget_service.load_budget(_budget_year(args))
+    except budget_service.BudgetError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+
+    if args.accounts:
+        print(f"{budget.title} — per-account goals\n")
+        print(f"{'account':38}{'monthly':>10}{'months':>8}{'annual':>12}")
+        for line in sorted(budget.lines, key=lambda ln: -abs(ln.annual)):
+            print(f"{line.account:38}{line.monthly:>10,.2f}{line.months:>8}{line.annual:>12,.2f}")
+        return 0
+
+    print(f"{budget.title}\n")
+    print(f"{'':38}{'per year':>12}{'per month':>12}")
+    print("-" * 62)
+    for group in budget.expense_groups:
+        print(f"{group.label:38}{group.annual:>12,.0f}{group.monthly:>12,.0f}")
+    print("-" * 62)
+    print(f"{'Total expenses':38}{budget.expense_total:>12,.0f}"
+          f"{budget.expense_total / 12:>12,.0f}")
+    print()
+    for group in budget.income_groups:
+        print(f"{group.label:38}{group.annual:>12,.0f}")
+    print("-" * 62)
+    print(f"{'Total income':38}{budget.income_total:>12,.0f}")
+    print(f"{'Surplus to savings':38}{budget.surplus:>12,.0f}")
+    if budget.paid_by_others:
+        print()
+        print(f"{'Paid directly by others':38}{budget.others_total:>12,.0f}")
+        print(f"{'Total cost of the year':38}{budget.total_cost:>12,.0f}")
+    return 0
+
+
+def cmd_budget_compare(args: argparse.Namespace) -> int:
+    year = _budget_year(args)
+    try:
+        budget = budget_service.load_budget(year)
+    except budget_service.BudgetError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+
+    months = max(1, args.months)
+    begin, end, months = budget_service.month_window(months)
+    rows = budget_service.compare(budget, begin, end, months)
+
+    label = "this month" if months == 1 else f"last {months} months"
+    print(f"Actual spending vs the {year} budget — {label} ({begin} to {end})\n")
+    print(f"{'':36}{'actual':>10}{'budget':>10}{'diff':>10}{'used':>8}")
+    print("-" * 74)
+    for row in sorted(rows, key=lambda r: -r.variance):
+        pct = f"{row.pct}%" if row.pct is not None else "-"
+        flag = "  <<" if row.pct is not None and row.pct > 110 else ""
+        print(f"{row.group.label:36}{row.actual:>10,.0f}{row.goal:>10,.0f}"
+              f"{row.variance:>+10,.0f}{pct:>8}{flag}")
+    print("-" * 74)
+    actual = sum((r.actual for r in rows), Decimal(0))
+    goal = sum((r.goal for r in rows), Decimal(0))
+    used = int(actual / goal * 100) if goal else 0
+    print(f"{'TOTAL':36}{actual:>10,.0f}{goal:>10,.0f}{actual - goal:>+10,.0f}{used:>7}%")
+
+    extra = budget_service.unbudgeted(budget, begin, end)
+    if extra:
+        total_extra = sum(extra.values(), Decimal(0))
+        print()
+        print(f"{'Not in the budget (funded from savings)':36}{total_extra:>10,.0f}")
+        for account, amount in sorted(extra.items(), key=lambda kv: -kv[1]):
+            print(f"  {account:34}{amount:>10,.0f}")
+        print(f"{'ALL SPENDING':36}{actual + total_extra:>10,.0f}")
+
+    print(f"\nBudget rates are the {year} monthly goals; digs costs are counted at their")
+    print("occupied-month rate. `<<` marks a line running more than 10% over.")
+    return 0
+
+
+def cmd_budget_performance(args: argparse.Namespace) -> int:
+    print(budget_service.performance(_budget_year(args), depth=args.depth))
+    return 0
+
+
+def cmd_budget_export(args: argparse.Namespace) -> int:
+    year = _budget_year(args)
+    try:
+        budget = budget_service.load_budget(year)
+    except budget_service.BudgetError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+
+    out_dir = Path(args.out).expanduser() if args.out else Path.cwd() / "other"
+    stem = args.stem or f"{year}-budget"
+    written: list[Path] = []
+    try:
+        written.append(budget_service.export_xlsx(budget, out_dir / f"{stem}.xlsx"))
+        html_path = budget_service.export_html(budget, out_dir / f"{stem}.html")
+        written.append(html_path)
+        if not args.no_pdf:
+            written.append(budget_service.export_pdf(html_path, out_dir / f"{stem}.pdf"))
+    except budget_service.BudgetError as exc:
+        print(f"ERROR: {exc}")
+        for path in written:
+            print(f"  wrote {path}")
+        return 1
+
+    for path in written:
+        print(f"wrote {path}")
+    print(f"\nexpenses {budget.expense_total:,.0f} · income {budget.income_total:,.0f} "
+          f"· surplus {budget.surplus:,.0f}")
+    return 0
+
+
 def cmd_data_status(_: argparse.Namespace) -> int:
     try:
         return git_status()
@@ -375,7 +538,7 @@ def build_parser() -> argparse.ArgumentParser:
     journal.set_defaults(func=cmd_journal_build)
 
     imp = sub.add_parser("import", help="Import statement data into canonical JSONL storage")
-    imp.add_argument("bank", choices=["tyme"], help="Statement import source")
+    imp.add_argument("bank", choices=["tyme", "investec"], help="Statement import source")
     imp.add_argument("file", help="CSV statement file")
     imp.add_argument("--account", choices=["checking", "savings"], default="checking")
     imp.add_argument("--delimiter", default=",", help="CSV delimiter")
@@ -460,6 +623,37 @@ def build_parser() -> argparse.ArgumentParser:
 
     inv_build = sub.add_parser("investment-build", help="Regenerate investments.journal without adding a valuation")
     inv_build.set_defaults(func=cmd_investment_build)
+
+    budget = sub.add_parser("budget", help="2027-style budget goals from the budget journal")
+    budget_sub = budget.add_subparsers(dest="budget_command", required=True)
+
+    b_show = budget_sub.add_parser("show", help="Print the budget, grouped as the exports show it")
+    b_show.add_argument("--year", type=int, help="Budget year (default: next year)")
+    b_show.add_argument("--accounts", action="store_true", help="List raw per-account goals instead")
+    b_show.set_defaults(func=cmd_budget_show)
+
+    b_cmp = budget_sub.add_parser("compare", help="Actual spending vs the budget's monthly rates")
+    b_cmp.add_argument("--year", type=int, help="Budget year to measure against (default: next year)")
+    b_cmp.add_argument("--months", type=int, default=1, help="Trailing window in months (default: 1)")
+    b_cmp.set_defaults(func=cmd_budget_compare)
+
+    b_perf = budget_sub.add_parser("performance", help="Actual vs budget, by month (hledger --budget)")
+    b_perf.add_argument("--year", type=int, help="Budget year (default: next year)")
+    b_perf.add_argument("--depth", type=int, help="Roll accounts up to this depth")
+    b_perf.set_defaults(func=cmd_budget_performance)
+
+    b_exp = budget_sub.add_parser("export", help="Write the shareable spreadsheet, page and PDF")
+    b_exp.add_argument("--year", type=int, help="Budget year (default: next year)")
+    b_exp.add_argument("--out", help="Output directory (default: ./other)")
+    b_exp.add_argument("--stem", help="Filename stem (default: <year>-budget)")
+    b_exp.add_argument("--no-pdf", action="store_true", help="Skip the PDF render")
+    b_exp.set_defaults(func=cmd_budget_export)
+
+    web = sub.add_parser("web", help="Launch the browser UI (FastAPI + HTMX)")
+    web.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
+    web.add_argument("--port", type=int, default=8000, help="Bind port (default: 8000)")
+    web.add_argument("--reload", action="store_true", help="Auto-reload on code changes (dev)")
+    web.set_defaults(func=cmd_web)
 
     data_status = sub.add_parser("data-status", help="Run git status in the FIN_DATA_DIR repo")
     data_status.set_defaults(func=cmd_data_status)
