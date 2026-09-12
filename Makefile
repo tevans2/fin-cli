@@ -5,7 +5,7 @@ ACCOUNT := checking
 MONTH   := this month
 export FIN_DATA_DIR := $(HOME)/private/finance-data
 
-.PHONY: sync rules-apply \
+.PHONY: sync rules-apply verify \
         bs is expenses unknowns review \
         spend-month spend-trend top-spend monthly \
         net-worth net-income \
@@ -23,6 +23,9 @@ sync:        ## Fetch latest transactions from bank (BANK=investec ACCOUNT=check
 
 rules-apply: ## Auto-categorize transactions by applying rules.yaml
 	$(FIN) rules-apply $(BANK)
+
+verify:      ## Reconcile each account's latest statement balance against the ledger
+	$(FIN) verify
 
 # ── named reports ─────────────────────────────────────────────────────────────
 

@@ -37,6 +37,7 @@ This keeps the system easier to reason about than a raw-import-first workflow wh
 - list uncategorized transactions for review
 - generate `hledger` journals from canonical transaction data
 - compare live bank-API transactions against the local journal
+- reconcile the ledger against bank statement balances (`fin verify`)
 - track investment valuations and generate unrealised gains/losses entries
 - build annual budgets and compare actual spending against them
 - run `hledger` reports through the CLI
@@ -104,6 +105,7 @@ A `Makefile` is included for common workflows. Run `make help` to list all targe
   help           Show this help
   sync           Fetch latest transactions from bank (BANK=investec ACCOUNT=checking)
   rules-apply    Auto-categorize transactions by applying rules.yaml
+  verify         Reconcile each account's latest statement balance against the ledger
   monthly        Full monthly overview through a pager (MONTH="this month")
   budget         Show the budget (YEAR=2027; VIEW=groups|accounts|performance)
   budget-vs      Current spending vs the budget (MONTHS=1)
@@ -273,6 +275,16 @@ fin hledger balance
 fin compare investec --account savings --date-mode action --begin 2026-03-01 --end 2026-03-31
 ```
 
+### Verification
+
+```bash
+fin verify   # reconcile each account's latest statement balance against the ledger
+```
+
+`fin verify` reports OK when the ledger balance as of the latest imported row
+matches the bank's own running balance, and flags any drift. It exits non-zero
+on drift, so it doubles as a scriptable accuracy check.
+
 ### Investment tracking
 
 ```bash
@@ -324,6 +336,7 @@ fin data-push
 fin sync investec
 fin rules-apply investec
 fin review investec              # inspect anything still uncategorized
+fin verify                      # confirm the ledger matches the bank
 fin reports bs
 fin data-commit -m "Sync latest transactions"
 fin data-push

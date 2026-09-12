@@ -18,6 +18,7 @@ from finance.services.review import review_unknowns
 from finance.services.rules import apply_rules, list_rules
 from finance.services.statement_import import format_import_result, import_statement
 from finance.services.sync import sync_bank
+from finance.services.verify import verify_accounts
 
 
 def cmd_doctor(_: argparse.Namespace) -> int:
@@ -145,6 +146,38 @@ def cmd_review(args: argparse.Namespace) -> int:
         print(f"{row.date} | {row.amount:>10} {row.currency} | {row.id} | {row.description}{alias}")
     print(f"Total unknowns: {len(rows)}")
     return 0
+
+
+def cmd_verify(_: argparse.Namespace) -> int:
+    try:
+        results = verify_accounts()
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    if not results:
+        print("No accounts carry a statement balance yet — nothing to verify.")
+        return 0
+
+    print(f"{'account':40}{'as of':12}{'statement':>14}{'ledger':>14}{'diff':>12}  status")
+    print("-" * 100)
+    drift = False
+    for row in results:
+        ledger = "-" if row["ledger_balance"] is None else f"{row['ledger_balance']:,.2f}"
+        diff = "-" if row["difference"] is None else f"{row['difference']:+,.2f}"
+        if row["ledger_balance"] is None:
+            status = "no ledger data"
+        elif row["ok"]:
+            status = "OK"
+        else:
+            status = "DRIFT  <<"
+            drift = True
+        print(
+            f"{row['ledger_account']:40}{row['as_of']:12}"
+            f"{row['statement_balance']:>14,.2f}{ledger:>14}{diff:>12}  {status}"
+        )
+    if drift:
+        print("\n`<<` marks an account whose ledger balance disagrees with the bank statement.")
+    return 1 if drift else 0
 
 
 def cmd_rules_list(_: argparse.Namespace) -> int:
@@ -491,6 +524,9 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--end", help="End date YYYY-MM-DD")
     compare.add_argument("--date-mode", choices=["posting", "action"], help="Date semantics for API-side comparison; defaults to posting for checking, action for savings")
     compare.set_defaults(func=cmd_compare)
+
+    verify = sub.add_parser("verify", help="Reconcile each account's latest statement balance against the ledger")
+    verify.set_defaults(func=cmd_verify)
 
     inv_set = sub.add_parser("investment-set", help="Record a new investment valuation")
     inv_set.add_argument("name", help="Short investment name, eg easyequities")
