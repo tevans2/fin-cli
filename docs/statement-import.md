@@ -114,6 +114,30 @@ running balance then fails to reconcile, a transaction line was missed and the
 import is refused. Multi-line wrapped descriptions aren't handled yet — one
 transaction per line.
 
+## AI fallback for stubborn PDFs
+
+When a PDF has no working `pdf.line_regex`, or the parsed rows fail the balance
+chain, you can fall back to OpenAI to extract the transactions:
+
+```bash
+export OPENAI_API_KEY=sk-...
+fin import acme statement.pdf --ai-fallback
+```
+
+This only runs when the deterministic parser fails **and** you pass
+`--ai-fallback`. What makes it trustworthy: the AI's output is run back through
+the **same balance chain** — if the statement shows running balances and the
+extraction doesn't reconcile, the import is refused just as a bad regex would be.
+
+- Needs `OPENAI_API_KEY` (set it in your shell or `FIN_DATA_DIR/config/.env`).
+- Install the extra: `pip install -e '.[ai]'`.
+- Model defaults to `gpt-4o-mini`; override with `OPENAI_MODEL`.
+
+> **Privacy:** `--ai-fallback` sends the statement's text to OpenAI, an external
+> service. It is off by default and never runs without the flag. Prefer writing a
+> `pdf.line_regex` profile for statements you import regularly, and reserve the AI
+> fallback for one-off or awkward layouts.
+
 ## Deduplication
 
 Statement rows carry no stable bank id, so imports dedupe on content — (posting

@@ -102,6 +102,7 @@ def cmd_import(args: argparse.Namespace) -> int:
             account=args.account,
             dry_run=args.dry_run,
             copy_raw=not args.no_copy_raw,
+            ai_fallback=args.ai_fallback,
         )
     except Exception as exc:
         print(f"ERROR: {exc}")
@@ -479,6 +480,12 @@ def build_parser() -> argparse.ArgumentParser:
     imp.add_argument("--account", default="checking", help="Account the statement is from (default: checking)")
     imp.add_argument("--dry-run", action="store_true", help="Parse, verify the balance chain and preview without writing")
     imp.add_argument("--no-copy-raw", action="store_true", help="Do not copy the raw file into FIN_DATA_DIR/imports")
+    imp.add_argument(
+        "--ai-fallback",
+        action="store_true",
+        help="If PDF parsing fails, send the statement text to OpenAI to extract transactions "
+        "(needs OPENAI_API_KEY; sends data to an external service; the result is still balance-chain validated)",
+    )
     imp.set_defaults(func=cmd_import)
 
     migrate = sub.add_parser("migrate-v1", help="Import existing V1 journal data into V2 canonical storage")

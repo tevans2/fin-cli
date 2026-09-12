@@ -33,6 +33,7 @@ This keeps the system easier to reason about than a raw-import-first workflow wh
 - migrate existing V1 journal data into V2 canonical storage
 - sync Investec transactions into canonical JSONL files
 - import CSV/PDF statements from any bank into canonical JSONL files, profile-driven and balance-chain validated
+- optional OpenAI fallback for hard PDFs (`--ai-fallback`), with the AI's output still balance-chain validated
 - apply categorization rules (`config/rules.yaml`)
 - list uncategorized transactions for review
 - generate `hledger` journals from canonical transaction data
@@ -250,11 +251,14 @@ fin journal-build investec
 fin import investec path/to/statement.csv --account savings --dry-run
 fin import investec path/to/statement.csv --account savings
 fin import fnb path/to/statement.csv --account checking        # any bank, via a profile
+fin import acme path/to/statement.pdf --ai-fallback            # OpenAI fallback for hard PDFs
 ```
 
 Imports are balance-chain validated: if the statement carries a running balance,
 a broken chain refuses the import before writing. Onboarding a new no-API account
-is a config task — see `docs/statement-import.md`.
+is a config task — see `docs/statement-import.md`. `--ai-fallback` sends statement
+text to OpenAI only when deterministic PDF parsing fails, and validates the result
+the same way (needs `OPENAI_API_KEY` and `pip install -e '.[ai]'`).
 
 ### Review and categorization
 

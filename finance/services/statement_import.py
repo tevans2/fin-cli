@@ -117,12 +117,15 @@ def import_statement(
     profile: StatementProfile | None = None,
     dry_run: bool = False,
     copy_raw: bool = True,
+    ai_fallback: bool = False,
 ) -> dict:
     """Parse and ingest a statement file for any bank.
 
     Parsing runs the balance-chain gate; a broken chain raises before anything
     is written. Existing rows (by content) are skipped so categories survive
-    re-imports; new rows get aliases + rules applied.
+    re-imports; new rows get aliases + rules applied. When ``ai_fallback`` is set,
+    a PDF the deterministic parser can't handle is extracted via OpenAI and
+    validated by the same balance chain.
     """
     source = Path(file_path).expanduser().resolve()
     if not source.exists():
@@ -131,7 +134,7 @@ def import_statement(
     if profile is None:
         profile = load_profile(bank, account)
 
-    rows, summary = parse_statement(source, profile)
+    rows, summary = parse_statement(source, profile, ai_fallback=ai_fallback)
 
     config = load_app_config()
     rules = RulesStore(config.paths.rules_config).load()
