@@ -61,6 +61,18 @@ def test_latest_statement_balance_picks_newest_and_ignores_balanceless():
     assert best[("investec", "checking")]["balance"] == "200.00"
 
 
+def test_latest_balance_uses_end_of_day_via_chain():
+    # three transactions on the same day; verify must pick the LAST by the
+    # running-balance chain (12245.49), not a mid-day row (12415.56).
+    records = [
+        _rec(id="a", date="2026-08-29", amount="315.00", provider_metadata={"balance": "12415.56"}),
+        _rec(id="b", date="2026-08-29", amount="-110.00", provider_metadata={"balance": "12305.56"}),
+        _rec(id="c", date="2026-08-29", amount="-60.07", provider_metadata={"balance": "12245.49"}),
+    ]
+    best = latest_statement_balances(records)
+    assert best[("investec", "checking")]["balance"] == "12245.49"
+
+
 def test_latest_statement_balance_tiebreaks_on_statement_line():
     records = [
         _rec(id="a", date="2026-01-02", provider_metadata={"balance": "100.00", "statement_line": 5}),

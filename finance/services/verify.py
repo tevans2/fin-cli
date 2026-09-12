@@ -9,6 +9,7 @@ and correct; a difference points at drift to investigate.
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -22,31 +23,53 @@ def _statement_balance(record: TransactionRecord) -> str | None:
     return balance if balance not in (None, "") else None
 
 
-def _rank(record: TransactionRecord) -> tuple:
+def _statement_line(record: TransactionRecord) -> int:
     try:
-        line = int((record.provider_metadata or {}).get("statement_line") or 0)
+        return int((record.provider_metadata or {}).get("statement_line") or 0)
     except (TypeError, ValueError):
-        line = 0
-    return (record.date, line, record.id)
+        return 0
+
+
+def _terminal_record(day_records: list[TransactionRecord]) -> TransactionRecord:
+    """The last transaction of a day, so its balance is the end-of-day balance.
+
+    Compares to the ledger, which is date-granular, so we must not pick a
+    mid-day row. Order is reconstructed from the running balance itself: record
+    ``s`` follows ``r`` when ``s.balance - s.amount == r.balance``, so the
+    terminal record is the one that is nobody's predecessor.
+    """
+    if len(day_records) == 1:
+        return day_records[0]
+    balances = {id(r): Decimal(_statement_balance(r)) for r in day_records}  # type: ignore[arg-type]
+
+    def has_successor(r: TransactionRecord) -> bool:
+        rb = balances[id(r)]
+        return any(s is not r and balances[id(s)] - Decimal(s.amount) == rb for s in day_records)
+
+    terminals = [r for r in day_records if not has_successor(r)]
+    if len(terminals) == 1:
+        return terminals[0]
+    # ambiguous chain: best effort — highest statement line, then highest balance
+    return max(day_records, key=lambda r: (_statement_line(r), balances[id(r)]))
 
 
 def latest_statement_balances(records: list[TransactionRecord]) -> dict[tuple[str, str], dict]:
-    """Newest known bank balance per (institution, source_account)."""
-    best: dict[tuple[str, str], dict] = {}
+    """End-of-day bank balance on the latest dated statement, per account."""
+    by_account: dict[tuple[str, str], list[TransactionRecord]] = defaultdict(list)
     for record in records:
-        balance = _statement_balance(record)
-        if balance is None:
-            continue
-        key = (record.institution, record.source_account)
-        rank = _rank(record)
-        current = best.get(key)
-        if current is None or rank > current["rank"]:
-            best[key] = {
-                "date": record.date,
-                "balance": balance,
-                "ledger_account": record.ledger_account,
-                "rank": rank,
-            }
+        if _statement_balance(record) is not None:
+            by_account[(record.institution, record.source_account)].append(record)
+
+    best: dict[tuple[str, str], dict] = {}
+    for key, account_records in by_account.items():
+        max_date = max(r.date for r in account_records)
+        day = [r for r in account_records if r.date == max_date]
+        terminal = _terminal_record(day)
+        best[key] = {
+            "date": max_date,
+            "balance": _statement_balance(terminal),
+            "ledger_account": terminal.ledger_account,
+        }
     return best
 
 
