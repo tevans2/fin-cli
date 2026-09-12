@@ -99,7 +99,20 @@ def rows_from_lines(lines: list[str], profile: StatementProfile) -> list[Stateme
     return rows
 
 
-def extract_lines(path: Path, password: str | None = None) -> list[str]:
+def extract_lines(
+    path: Path,
+    password: str | None = None,
+    *,
+    x_tolerance: float | None = None,
+    y_tolerance: float | None = None,
+) -> list[str]:
+    """Extract text lines from a PDF.
+
+    ``y_tolerance`` controls how far apart (in points) characters can be
+    vertically and still count as the same line. Some banks (e.g. GoTyme) draw
+    overlapping/pending rows a couple of points apart; the default of 3 merges
+    them into garbled text, so a tighter value (1) separates them.
+    """
     try:
         import pdfplumber
     except ImportError as exc:  # pragma: no cover - dependency guard
@@ -115,10 +128,16 @@ def extract_lines(path: Path, password: str | None = None) -> list[str]:
         )
         raise StatementFormatError(f"Could not open PDF ({hint}): {exc}") from exc
 
+    kwargs = {}
+    if x_tolerance is not None:
+        kwargs["x_tolerance"] = x_tolerance
+    if y_tolerance is not None:
+        kwargs["y_tolerance"] = y_tolerance
+
     lines: list[str] = []
     with pdf:
         for page in pdf.pages:
-            text = page.extract_text() or ""
+            text = page.extract_text(**kwargs) or ""
             lines.extend(line.strip() for line in text.splitlines() if line.strip())
     return lines
 
@@ -126,4 +145,11 @@ def extract_lines(path: Path, password: str | None = None) -> list[str]:
 def parse_pdf(
     path: Path, profile: StatementProfile, password: str | None = None
 ) -> tuple[list[StatementRow], str | None]:
-    return rows_from_lines(extract_lines(Path(path), password=password), profile), None
+    settings = profile.pdf or {}
+    lines = extract_lines(
+        Path(path),
+        password=password,
+        x_tolerance=settings.get("x_tolerance"),
+        y_tolerance=settings.get("y_tolerance"),
+    )
+    return rows_from_lines(lines, profile), None

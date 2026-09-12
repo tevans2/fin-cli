@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from finance.statements.ai_extract import _call_openai, rows_from_ai_payload
+from finance.statements.ai_extract import _call_openai, reconcile_with_balances, rows_from_ai_payload
 from finance.statements.model import BalanceChainError, StatementFormatError, StatementRow
 from finance.statements.parse import parse_statement
 from finance.statements.profile import StatementProfile
@@ -35,6 +35,42 @@ def test_rows_from_ai_payload_builds_rows():
 def test_rows_from_ai_payload_rejects_empty():
     with pytest.raises(StatementFormatError):
         rows_from_ai_payload({"transactions": []}, _pdf_profile())
+
+
+def test_reconcile_fixes_signs_from_balances():
+    payload = {
+        "opening_balance": "1000.00",
+        "closing_balance": "1130.00",
+        "total_credit": "200.00",
+        "total_debit": "70.00",
+        "transactions": [
+            {"date": "2026-01-01", "description": "credit A", "amount": "-200.00", "balance": "1200.00"},
+            {"date": "2026-01-02", "description": "debit B", "amount": "70.00", "balance": "1130.00"},
+        ],
+    }
+    rows = reconcile_with_balances(payload, rows_from_ai_payload(payload, _pdf_profile()))
+    assert rows[0].amount == "200.00"   # was wrongly negative -> corrected to credit
+    assert rows[1].amount == "-70.00"   # was wrongly positive -> corrected to debit
+
+
+def test_reconcile_rejects_when_summary_totals_disagree():
+    payload = {
+        "opening_balance": "1000.00",
+        "total_credit": "200.00",
+        "total_debit": "70.00",
+        "transactions": [
+            {"date": "2026-01-01", "description": "a", "amount": "0", "balance": "1200.00"},
+            {"date": "2026-01-02", "description": "b", "amount": "0", "balance": "1135.00"},  # misread balance
+        ],
+    }
+    with pytest.raises(BalanceChainError):
+        reconcile_with_balances(payload, rows_from_ai_payload(payload, _pdf_profile()))
+
+
+def test_reconcile_is_noop_without_opening_balance():
+    payload = {"transactions": [{"date": "2026-01-01", "description": "a", "amount": "-50.00", "balance": "950.00"}]}
+    rows = reconcile_with_balances(payload, rows_from_ai_payload(payload, _pdf_profile()))
+    assert rows[0].amount == "-50.00"
 
 
 def test_rows_from_ai_payload_rejects_missing_amount():

@@ -140,9 +140,18 @@ fin import acme statement.pdf --ai-fallback
 ```
 
 This only runs when the deterministic parser fails **and** you pass
-`--ai-fallback`. What makes it trustworthy: the AI's output is run back through
-the **same balance chain** — if the statement shows running balances and the
-extraction doesn't reconcile, the import is refused just as a bad regex would be.
+`--ai-fallback`. What makes it trustworthy:
+
+- The AI's job is to **transcribe** each row's running-balance column, not to work
+  out debit vs credit. When every row has a balance and the statement's opening
+  balance is known, each amount is derived deterministically as
+  `balance − previous balance` — so the sign is never the model's guess.
+- The result is validated against the statement's own **printed summary** (opening,
+  closing, total credit, total debit) and the balance chain. If anything
+  disagrees, the import is refused, naming the mismatch.
+
+This is why a cheap model (gpt-4o-mini) is usually enough: the model only has to
+copy dates, descriptions and balances; the arithmetic and validation are ours.
 
 - Needs `OPENAI_API_KEY` (set it in your shell or `FIN_DATA_DIR/config/.env`).
 - Install the extra: `pip install -e '.[ai]'`.

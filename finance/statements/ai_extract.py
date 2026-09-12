@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import json
 import os
+from decimal import Decimal
 from pathlib import Path
 
-from finance.statements.model import StatementFormatError, StatementRow
+from finance.statements.model import BalanceChainError, StatementFormatError, StatementRow
 from finance.statements.normalize import parse_date, to_decimal
 from finance.statements.profile import StatementProfile
 
@@ -31,18 +32,30 @@ _SYSTEM_PROMPT = (
 _USER_TEMPLATE = """Extract every transaction from this bank statement.
 
 Return a JSON object of exactly this shape:
-{{"transactions": [
-  {{"date": "YYYY-MM-DD", "description": "text", "amount": "-123.45", "balance": "1000.00"}}
-]}}
+{{"opening_balance": "1000.00", "closing_balance": "1234.56",
+  "total_credit": "500.00", "total_debit": "265.44",
+  "transactions": [
+    {{"date": "YYYY-MM-DD", "description": "text", "amount": "-123.45", "balance": "1000.00"}}
+  ]}}
 
 Rules:
+- opening_balance / closing_balance / total_credit / total_debit: copy these from
+  the statement's summary section if it shows them, else null. Read them carefully —
+  they are used to verify the extraction.
 - One object per transaction, in chronological order (oldest first).
 - date: ISO YYYY-MM-DD.
-- amount: a decimal string; NEGATIVE for money out (debit), POSITIVE for money in (credit).
-- balance: the running account balance after the transaction as a decimal string,
-  or null if the statement does not show a per-line balance. Include it whenever present —
-  it is used to verify the extraction.
-- Do not include opening/closing summary lines as transactions.
+- balance: THE MOST IMPORTANT FIELD. Copy verbatim the number in the statement's
+  rightmost "Running Balance" column for that exact row — the last number on the
+  row. Do NOT calculate or infer it; transcribe exactly what is printed. If (and
+  only if) the statement has no per-row running-balance column, use null.
+- amount: your best signed decimal — NEGATIVE for money out, POSITIVE for money in.
+  Don't agonise over the sign: when a running balance is present the sign is
+  recomputed from the change in balance, so just transcribe the balances faithfully.
+- A transaction may span multiple lines: the description can wrap onto the line
+  above or below, and a long reference number often sits on its own line. Merge
+  these into one transaction; ignore stray one- or two-character fragments (page
+  watermarks bleeding into rows).
+- Do not include opening/closing summary lines or column headers as transactions.
 - The account currency is {currency}.
 
 Statement text:
@@ -51,10 +64,24 @@ Statement text:
 ---"""
 
 
-def extract_pdf_text(path: Path, password: str | None = None) -> str:
+def extract_pdf_text(
+    path: Path,
+    password: str | None = None,
+    *,
+    x_tolerance: float | None = None,
+    y_tolerance: float | None = 1,
+) -> str:
+    """Extract PDF text for the AI.
+
+    Defaults to a tight ``y_tolerance`` so banks that draw overlapping/pending
+    rows (e.g. GoTyme) come through as separate lines instead of merged garble;
+    the AI ignores the short watermark fragments this can leave behind.
+    """
     from finance.statements.pdf_parser import extract_lines
 
-    return "\n".join(extract_lines(Path(path), password=password))
+    return "\n".join(
+        extract_lines(Path(path), password=password, x_tolerance=x_tolerance, y_tolerance=y_tolerance)
+    )
 
 
 def rows_from_ai_payload(payload: dict, profile: StatementProfile) -> list[StatementRow]:
@@ -86,6 +113,56 @@ def rows_from_ai_payload(payload: dict, profile: StatementProfile) -> list[State
                 line_number=index,
                 raw={"ai": json.dumps(txn, ensure_ascii=False)},
             )
+        )
+    return rows
+
+
+def _opt_decimal(value) -> Decimal | None:
+    if value in (None, "", "null"):
+        return None
+    return to_decimal(str(value))
+
+
+def reconcile_with_balances(payload: dict, rows: list[StatementRow]) -> list[StatementRow]:
+    """Correct amounts from the authoritative running-balance column, then validate.
+
+    The credit/debit sign is ambiguous in flattened statement text (descriptions
+    contain dashes; the model guesses from wording), but the running balance is
+    reliable. When every row has a balance and the statement's opening balance is
+    known, the true amount of each row is ``balance - previous balance``. Because
+    that makes the balance chain pass by construction, the extraction is instead
+    validated against the statement's own printed summary totals.
+
+    Returns rows unchanged when balances/opening aren't all available (the caller
+    then falls back to validating the model's own amounts via the balance chain).
+    """
+    opening = _opt_decimal(payload.get("opening_balance"))
+    if opening is None or not all(r.balance is not None for r in rows):
+        return rows
+
+    prev = opening
+    for row in rows:
+        current = Decimal(row.balance)  # type: ignore[arg-type]
+        row.amount = f"{current - prev:.2f}"
+        prev = current
+
+    net = sum((Decimal(r.amount) for r in rows), Decimal(0))
+    credits = sum((Decimal(r.amount) for r in rows if Decimal(r.amount) > 0), Decimal(0))
+    debits = -sum((Decimal(r.amount) for r in rows if Decimal(r.amount) < 0), Decimal(0))
+
+    problems: list[str] = []
+    closing = _opt_decimal(payload.get("closing_balance"))
+    if closing is not None and opening + net != closing:
+        problems.append(f"opening+net = {opening + net} but statement closing = {closing}")
+    total_credit = _opt_decimal(payload.get("total_credit"))
+    if total_credit is not None and credits != total_credit:
+        problems.append(f"credits total {credits} != statement total credit {total_credit}")
+    total_debit = _opt_decimal(payload.get("total_debit"))
+    if total_debit is not None and debits != total_debit:
+        problems.append(f"debits total {debits} != statement total debit {total_debit}")
+    if problems:
+        raise BalanceChainError(
+            "AI extraction disagrees with the statement's printed summary: " + "; ".join(problems)
         )
     return rows
 
@@ -129,11 +206,18 @@ def extract_pdf_rows(
 
     ensure_env_loaded()
     model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
-    text = extract_pdf_text(Path(path), password=password)
+    settings = profile.pdf or {}
+    text = extract_pdf_text(
+        Path(path),
+        password=password,
+        x_tolerance=settings.get("x_tolerance"),
+        y_tolerance=settings.get("y_tolerance", 1),
+    )
     if not text.strip():
         raise StatementFormatError("Could not extract any text from the PDF to send to the AI")
     print(f"PDF parse failed ({reason}); sending statement text to OpenAI ({model}) to extract transactions…")
     payload = _call_openai(text, currency=profile.currency, model=model)
     rows = rows_from_ai_payload(payload, profile)
+    rows = reconcile_with_balances(payload, rows)
     print(f"AI returned {len(rows)} transaction(s); validating against the balance chain…")
     return rows
