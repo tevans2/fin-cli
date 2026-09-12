@@ -167,7 +167,7 @@ def reconcile_with_balances(payload: dict, rows: list[StatementRow]) -> list[Sta
     return rows
 
 
-def _call_openai(text: str, *, currency: str, model: str) -> dict:
+def _call_openai(text: str, *, currency: str, model: str, temperature: float = 0) -> dict:
     from finance.config import ensure_env_loaded
 
     ensure_env_loaded()  # pick up OPENAI_API_KEY from ./.env or FIN_DATA_DIR/config/.env
@@ -185,7 +185,7 @@ def _call_openai(text: str, *, currency: str, model: str) -> dict:
     response = client.chat.completions.create(
         model=model,
         response_format={"type": "json_object"},
-        temperature=0,
+        temperature=temperature,
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": _USER_TEMPLATE.format(currency=currency, text=text[:MAX_CHARS])},
@@ -201,11 +201,18 @@ def _call_openai(text: str, *, currency: str, model: str) -> dict:
 def extract_pdf_rows(
     path: Path, profile: StatementProfile, *, reason: str = "", password: str | None = None
 ) -> list[StatementRow]:
-    """Extract transactions from a PDF via OpenAI (deterministic parse having failed)."""
+    """Extract transactions from a PDF via OpenAI (deterministic parse having failed).
+
+    A single misread digit fails the summary validation, so we retry a few times
+    with a little temperature and accept the first extraction that reconciles —
+    the validation is strict (it must match the statement's printed totals), so a
+    passing result is trustworthy.
+    """
     from finance.config import ensure_env_loaded
 
     ensure_env_loaded()
     model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
+    attempts = max(1, int(os.getenv("FIN_AI_ATTEMPTS", "3")))
     settings = profile.pdf or {}
     text = extract_pdf_text(
         Path(path),
@@ -216,8 +223,20 @@ def extract_pdf_rows(
     if not text.strip():
         raise StatementFormatError("Could not extract any text from the PDF to send to the AI")
     print(f"PDF parse failed ({reason}); sending statement text to OpenAI ({model}) to extract transactions…")
-    payload = _call_openai(text, currency=profile.currency, model=model)
-    rows = rows_from_ai_payload(payload, profile)
-    rows = reconcile_with_balances(payload, rows)
-    print(f"AI returned {len(rows)} transaction(s); validating against the balance chain…")
-    return rows
+
+    last_exc: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        payload = _call_openai(
+            text, currency=profile.currency, model=model, temperature=0 if attempt == 1 else 0.4
+        )
+        try:
+            rows = reconcile_with_balances(payload, rows_from_ai_payload(payload, profile))
+        except (BalanceChainError, StatementFormatError) as exc:
+            last_exc = exc
+            if attempt < attempts:
+                print(f"  attempt {attempt} didn't reconcile ({exc}); retrying…")
+                continue
+            raise
+        print(f"AI returned {len(rows)} transaction(s) (attempt {attempt}); validating against the balance chain…")
+        return rows
+    raise last_exc or StatementFormatError("AI extraction failed")  # pragma: no cover
