@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from finance.models.transaction import TransactionRecord
@@ -25,9 +27,24 @@ class JsonlTransactionStore:
     def write_file(self, path: Path, records: list[TransactionRecord]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         sorted_records = sorted(records, key=lambda r: (r.date, r.id))
-        with open(path, "w") as f:
-            for record in sorted_records:
-                f.write(json.dumps(record.to_dict(), ensure_ascii=False) + "\n")
+        payload = "".join(
+            json.dumps(record.to_dict(), ensure_ascii=False) + "\n"
+            for record in sorted_records
+        )
+        # Write to a temp file in the same directory, then atomically replace, so
+        # a crash mid-write can never corrupt an existing year file (the source
+        # of truth). os.replace is atomic on the same filesystem.
+        fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(payload)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_name, path)
+        except BaseException:
+            if os.path.exists(tmp_name):
+                os.unlink(tmp_name)
+            raise
 
     def merge_file(self, path: Path, incoming: list[TransactionRecord]) -> tuple[int, int]:
         existing = {record.id: record for record in self.read_file(path)}

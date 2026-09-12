@@ -32,7 +32,7 @@ This keeps the system easier to reason about than a raw-import-first workflow wh
 - initialize a separate finance data repo
 - migrate existing V1 journal data into V2 canonical storage
 - sync Investec transactions into canonical JSONL files
-- import Investec and Tyme CSV statements into canonical JSONL files (with balance-chain validation)
+- import CSV/PDF statements from any bank into canonical JSONL files, profile-driven and balance-chain validated
 - apply categorization rules (`config/rules.yaml`)
 - list uncategorized transactions for review
 - generate `hledger` journals from canonical transaction data
@@ -245,10 +245,14 @@ fin migrate-v1 ../v1
 ```bash
 fin sync investec
 fin journal-build investec
-fin import tyme path/to/statement.csv --account checking --dry-run
-fin import tyme path/to/statement.csv --account checking
-fin import investec path/to/statement.csv --account savings   # balance-chain validated
+fin import investec path/to/statement.csv --account savings --dry-run
+fin import investec path/to/statement.csv --account savings
+fin import fnb path/to/statement.csv --account checking        # any bank, via a profile
 ```
+
+Imports are balance-chain validated: if the statement carries a running balance,
+a broken chain refuses the import before writing. Onboarding a new no-API account
+is a config task — see `docs/statement-import.md`.
 
 ### Review and categorization
 
@@ -377,7 +381,7 @@ That data repo can be tracked independently and optionally encrypted remotely wi
 
 ## Documentation
 
-- `docs/tyme-import.md` — Tyme CSV import workflow, best CSV format, column detection
+- `docs/statement-import.md` — CSV/PDF statement import, profiles, balance-chain validation, onboarding a new bank
 - `docs/investments.md` — investment tracking, valuations, cost basis, selling
 - `docs/manual-journal.md` — manual journal patterns: opening balances, income deferral, transfers
 - `docs/compare.md` — comparing live API transactions against local journal

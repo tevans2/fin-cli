@@ -7,17 +7,16 @@ from pathlib import Path
 
 from finance.paths import DataDirError, get_data_paths, validate_data_dir
 from finance.services import budget as budget_service
+from finance.services.compare import build_compare_dataset
 from finance.services.data_repo import DataRepoError, git_commit, git_pull, git_push, git_status
-from finance.services.import_investec_csv import import_investec_csv
-from finance.services.import_statement import import_tyme_csv
 from finance.services.init_data import initialize_data_dir
 from finance.services.investments import build_investment_journal, get_history, list_investments, set_valuation
 from finance.services.journal import build_bank_journal
 from finance.services.migrate import migrate_v1
 from finance.services.reports import run_cashflow, run_hledger, run_investments, run_named_report
-from finance.services.compare import build_compare_dataset
 from finance.services.review import review_unknowns
 from finance.services.rules import apply_rules, list_rules
+from finance.services.statement_import import format_import_result, import_statement
 from finance.services.sync import sync_bank
 
 
@@ -94,79 +93,19 @@ def cmd_journal_build(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_import_investec(args: argparse.Namespace) -> int:
-    try:
-        result = import_investec_csv(
-            args.file,
-            account=args.account,
-            dry_run=args.dry_run,
-            copy_raw=not args.no_copy_raw,
-        )
-    except Exception as exc:
-        print(f"ERROR: {exc}")
-        return 1
-
-    statement = result["statement"]
-    print(
-        f"Imported {result['bank']}[{result['account']}]: rows={result['rows']} "
-        f"inserted={result['inserted']} already_present={result['skipped_already_present']} "
-        f"dry_run={result['dry_run']}"
-    )
-    if statement["date_range"]:
-        print(f"Posting dates: {statement['date_range']['start']} -> {statement['date_range']['end']}")
-    print(
-        f"Balance chain: OK  opening={statement['opening_balance']} closing={statement['closing_balance']} "
-        f"debits={statement['total_debits']} credits={statement['total_credits']}"
-    )
-    if result["counts_by_year"]:
-        per_year = ", ".join(f"{year}: {count}" for year, count in result["counts_by_year"].items())
-        print(f"Inserted by year: {per_year}")
-    if result["raw_copy"]:
-        print(f"Raw CSV copy: {result['raw_copy']}")
-    if result["journal_output"]:
-        print(f"Journal output: {result['journal_output']}")
-    return 0
-
-
 def cmd_import(args: argparse.Namespace) -> int:
-    if args.bank == "investec":
-        return cmd_import_investec(args)
     try:
-        result = import_tyme_csv(
+        result = import_statement(
             args.file,
+            bank=args.bank,
             account=args.account,
-            delimiter=args.delimiter,
             dry_run=args.dry_run,
             copy_raw=not args.no_copy_raw,
-            date_column=args.date_column,
-            description_column=args.description_column,
-            amount_column=args.amount_column,
-            debit_column=args.debit_column,
-            credit_column=args.credit_column,
-            balance_column=args.balance_column,
-            reference_column=args.reference_column,
         )
     except Exception as exc:
         print(f"ERROR: {exc}")
         return 1
-
-    print(
-        f"Imported {result['bank']}[{result['account']}]: rows={result['rows']} inserted={result['inserted']} "
-        f"updated={result['updated']} unchanged={result['unchanged']} dry_run={result['dry_run']}"
-    )
-    if result["date_range"]:
-        print(f"Date range: {result['date_range']['start']} -> {result['date_range']['end']}")
-    print(f"Detected mapping: {result['mapping']}")
-    if result["years"]:
-        print(f"Touched years: {', '.join(map(str, result['years']))}")
-    if result["raw_copy"]:
-        print(f"Raw CSV copy: {result['raw_copy']}")
-    if result["journal_output"]:
-        print(f"Journal output: {result['journal_output']}")
-    if result["preview"]:
-        print("Preview:")
-        for row in result["preview"]:
-            print(f"  {row['date']} | {row['amount']:>10} | {row['description']} | {row['id']}")
+    print(format_import_result(result))
     return 0
 
 
@@ -501,20 +440,12 @@ def build_parser() -> argparse.ArgumentParser:
     journal.add_argument("bank", help="Bank/provider name, eg investec")
     journal.set_defaults(func=cmd_journal_build)
 
-    imp = sub.add_parser("import", help="Import statement data into canonical JSONL storage")
-    imp.add_argument("bank", choices=["tyme", "investec"], help="Statement import source")
-    imp.add_argument("file", help="CSV statement file")
-    imp.add_argument("--account", choices=["checking", "savings"], default="checking")
-    imp.add_argument("--delimiter", default=",", help="CSV delimiter")
-    imp.add_argument("--dry-run", action="store_true", help="Parse and preview without writing data")
-    imp.add_argument("--no-copy-raw", action="store_true", help="Do not copy the raw CSV into FIN_DATA_DIR/imports")
-    imp.add_argument("--date-column", help="Explicit CSV date column name")
-    imp.add_argument("--description-column", help="Explicit CSV description column name")
-    imp.add_argument("--amount-column", help="Explicit CSV signed amount column name")
-    imp.add_argument("--debit-column", help="Explicit CSV debit column name")
-    imp.add_argument("--credit-column", help="Explicit CSV credit column name")
-    imp.add_argument("--balance-column", help="Explicit CSV balance column name")
-    imp.add_argument("--reference-column", help="Explicit CSV reference/id column name")
+    imp = sub.add_parser("import", help="Import a bank statement (CSV/PDF) into canonical JSONL storage")
+    imp.add_argument("bank", help="Bank/provider name, eg investec, tyme, fnb")
+    imp.add_argument("file", help="Statement file (CSV or PDF)")
+    imp.add_argument("--account", default="checking", help="Account the statement is from (default: checking)")
+    imp.add_argument("--dry-run", action="store_true", help="Parse, verify the balance chain and preview without writing")
+    imp.add_argument("--no-copy-raw", action="store_true", help="Do not copy the raw file into FIN_DATA_DIR/imports")
     imp.set_defaults(func=cmd_import)
 
     migrate = sub.add_parser("migrate-v1", help="Import existing V1 journal data into V2 canonical storage")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+from decimal import Decimal
 
 from finance.config import load_app_config
 from finance.models.transaction import TransactionRecord
@@ -12,8 +12,11 @@ def _status_marker(status: str) -> str:
     return "*" if status == "cleared" else "!"
 
 
-def _format_amount(amount: str, currency: str) -> str:
-    return f"{float(amount):.2f} {currency}"
+def _format_amount(amount: str | Decimal, currency: str) -> str:
+    # Money is Decimal end to end: float would both misprint (1234.56 ->
+    # 1234.5599...) and risk the two postings not summing to zero, which
+    # hledger rejects.
+    return f"{Decimal(str(amount)):.2f} {currency}"
 
 
 def _render_transaction(record: TransactionRecord) -> str:
@@ -27,7 +30,7 @@ def _render_transaction(record: TransactionRecord) -> str:
             for s in record.splits
         )
         return header + source + postings
-    opposite_amount = f"{-float(record.amount):.2f}"
+    opposite_amount = -Decimal(str(record.amount))
     return header + source + f"    {record.category}    {_format_amount(opposite_amount, record.currency)}\n"
 
 
