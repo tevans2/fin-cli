@@ -1,11 +1,11 @@
-VENV    := $(HOME)/.venvs/.fin-venv
-FIN     := $(VENV)/bin/fin
+# `fin` is expected on PATH (install with `make install`). The data dir comes
+# from `fin config` / FIN_DATA_DIR, so it is no longer hardcoded here.
+FIN     := fin
 BANK    := investec
 ACCOUNT := checking
 MONTH   := this month
-export FIN_DATA_DIR := $(HOME)/private/finance-data
 
-.PHONY: sync rules-apply verify \
+.PHONY: install dev sync rules-apply verify \
         bs is expenses unknowns review \
         spend-month spend-trend top-spend monthly \
         net-worth net-income \
@@ -15,6 +15,14 @@ export FIN_DATA_DIR := $(HOME)/private/finance-data
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ { printf "  %-14s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+# ── setup ─────────────────────────────────────────────────────────────────────
+
+install:     ## Install the `fin` CLI on your PATH (uv tool, editable, with AI extra)
+	uv tool install --editable '.[ai]'
+
+dev:         ## Sync the project venv for development (tests, linting)
+	uv sync --extra dev --extra ai
 
 # ── data ─────────────────────────────────────────────────────────────────────
 

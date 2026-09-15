@@ -104,6 +104,8 @@ A `Makefile` is included for common workflows. Run `make help` to list all targe
 
 ```
   help           Show this help
+  install        Install the `fin` CLI on your PATH (uv tool, editable, with AI extra)
+  dev            Sync the project venv for development (tests, linting)
   sync           Fetch latest transactions from bank (BANK=investec ACCOUNT=checking)
   rules-apply    Auto-categorize transactions by applying rules.yaml
   verify         Reconcile each account's latest statement balance against the ledger
@@ -137,29 +139,28 @@ make run BANK=tyme ACCOUNT=checking
 
 - Python 3.11+
 - `hledger`
-- bank API credentials for live sync
+- [`uv`](https://docs.astral.sh/uv/) (recommended installer)
+- bank API credentials for live sync (optional; statement import needs none)
 - a separate directory/repo for finance data
 
 ---
 
 ## Installation
 
-Using your existing virtualenv:
+Install the `fin` CLI onto your PATH with `uv` — no venv to activate or manage:
 
 ```bash
-pip install -e .
+uv tool install --editable '.[ai]'   # or: make install
 ```
 
-After installation, the CLI command is:
+`fin` is then available from any directory. `--editable` means code changes take
+effect immediately; drop `[ai]` if you don't want the OpenAI PDF fallback.
+
+For development (tests, linting), sync the project environment instead:
 
 ```bash
-fin
-```
-
-You can also run directly during development:
-
-```bash
-python -m finance.cli.main --help
+uv sync --extra dev --extra ai       # or: make dev
+uv run pytest
 ```
 
 ---
@@ -169,9 +170,15 @@ python -m finance.cli.main --help
 ### 1. Initialize a separate data repo
 
 ```bash
-fin init-data ~/private/finance-data
-export FIN_DATA_DIR=~/private/finance-data
+fin init-data ~/private/finance-data   # also saves the path to ~/.config/fin/config.yaml
 fin doctor
+```
+
+`init-data` records the data-dir in your config, so you never need to export
+`FIN_DATA_DIR`. To point at an existing data repo instead:
+
+```bash
+fin config set data-dir ~/private/finance-data
 ```
 
 ### 2. Migrate existing V1 data
@@ -208,23 +215,30 @@ fin data-push
 
 ## Configuration
 
-The app reads all user data through:
+App settings live in a config directory — `$FIN_CONFIG_DIR`, else
+`$XDG_CONFIG_HOME/fin`, else `~/.config/fin`:
+
+- `config.yaml` — settings: `data_dir`, `openai_model`, `ai_attempts`
+- `.env` — secrets: `OPENAI_API_KEY`, `<BANK>_DOC_CODE` (loaded automatically)
 
 ```bash
-export FIN_DATA_DIR=~/private/finance-data
+fin config show                       # config dir + every setting and its source
+fin config set data-dir ~/private/finance-data
+fin config set openai-model gpt-4o
+fin config get data_dir
+fin config path                       # path to config.yaml
+fin config edit                       # open it in $EDITOR
 ```
 
-Important paths inside that data repo:
+Every setting can be overridden by an environment variable (which wins), so
+`export FIN_DATA_DIR=...` still works — useful for a second or throwaway data repo.
 
-- `config/banks.yaml`
-- `config/rules.yaml`
-- `config/accounts.journal`
-- `imports/<bank>/*`
-- `transactions/<bank>/<year>.jsonl`
-- `journal/main.journal`
-- `journal/manual.journal`
-- `journal/generated/<bank>.journal`
-- `state/sync.yaml`
+The **data repo** itself (referenced by `data_dir`) holds the per-account data
+config, versioned and encrypted with the data:
+
+- `config/banks.yaml`, `config/rules.yaml`, `config/aliases.yaml`, `config/accounts.journal`
+- `config/statements/<bank>.yaml` — statement import profiles
+- `transactions/<bank>/<year>.jsonl`, `journal/*`, `state/sync.yaml`, `imports/<bank>/*`
 
 ---
 
@@ -233,8 +247,10 @@ Important paths inside that data repo:
 ### Setup and validation
 
 ```bash
+fin --version
 fin doctor
 fin init-data ~/private/finance-data
+fin config show
 ```
 
 ### Migration
@@ -258,7 +274,7 @@ Imports are balance-chain validated: if the statement carries a running balance,
 a broken chain refuses the import before writing. Onboarding a new no-API account
 is a config task — see `docs/statement-import.md`. `--ai-fallback` sends statement
 text to OpenAI only when deterministic PDF parsing fails, and validates the result
-the same way (needs `OPENAI_API_KEY` and `pip install -e '.[ai]'`).
+the same way (needs `OPENAI_API_KEY` and the `[ai]` extra, included by `make install`).
 
 ### Review and categorization
 
@@ -353,8 +369,7 @@ interactive categorization flow is planned once the core is complete.
 ### Initial migration workflow
 
 ```bash
-fin init-data ~/private/finance-data
-export FIN_DATA_DIR=~/private/finance-data
+fin init-data ~/private/finance-data   # saves data_dir to config
 fin migrate-v1 ../v1
 fin reports bs
 fin data-commit -m "Initial V2 migration"

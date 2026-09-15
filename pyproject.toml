@@ -1,8 +1,11 @@
 [project]
 name = "finance-v2"
 version = "0.1.0"
-description = "Finance CLI V2"
+description = "A personal finance CLI built on hledger: import statements, categorize, and report from a canonical transaction store."
+readme = "README.md"
 requires-python = ">=3.11"
+authors = [{ name = "Tate Evans" }]
+keywords = ["finance", "hledger", "cli", "budgeting", "accounting"]
 dependencies = [
   "pyyaml>=6.0",
   "requests>=2.31.0",

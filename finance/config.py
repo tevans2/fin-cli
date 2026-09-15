@@ -58,10 +58,14 @@ def _load_env(paths: DataPaths) -> None:
 def ensure_env_loaded() -> None:
     """Load .env files into os.environ without requiring a full app config.
 
-    Reads ``./.env`` and ``FIN_DATA_DIR/config/.env`` (if FIN_DATA_DIR is set),
-    using setdefault so real environment variables always win. Safe to call
-    repeatedly. Used to pick up secrets like OPENAI_API_KEY from a .env file.
+    Reads ``~/.config/fin/.env`` (the config dir), ``./.env``, and
+    ``FIN_DATA_DIR/config/.env`` (if set), using setdefault so real environment
+    variables always win. Safe to call repeatedly. Used to pick up secrets like
+    OPENAI_API_KEY and <BANK>_DOC_CODE from a .env file.
     """
+    from finance import settings
+
+    _load_env_file(settings.env_file())
     _load_env_file(Path.cwd() / ".env")
     try:
         data_root = get_data_paths().root

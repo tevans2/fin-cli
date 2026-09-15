@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -92,10 +91,13 @@ class DataPaths:
 
 
 def resolve_data_dir() -> Path:
-    value = os.getenv("FIN_DATA_DIR")
+    from finance import settings
+
+    value = settings.get("data_dir")
     if not value:
         raise DataDirError(
-            "FIN_DATA_DIR is not set. Point it at your separate finance data repo."
+            "Finance data directory is not configured. Set it once with "
+            "`fin config set data-dir <path>` (or export FIN_DATA_DIR)."
         )
     return Path(value).expanduser().resolve()
 

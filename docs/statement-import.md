@@ -118,7 +118,7 @@ transaction per line.
 
 Many banks email encrypted PDFs. Put the password in an environment variable named
 `<BANK>_DOC_CODE` (the bank name uppercased, non-alphanumerics become `_`) — e.g.
-`INVESTEC_DOC_CODE`, `FNB_DOC_CODE`. It can live in your `.env`:
+`INVESTEC_DOC_CODE`, `FNB_DOC_CODE`. It can live in `~/.config/fin/.env`:
 
 ```
 INVESTEC_DOC_CODE=your-statement-password
@@ -153,8 +153,8 @@ This only runs when the deterministic parser fails **and** you pass
 This is why a cheap model (gpt-4o-mini) is usually enough: the model only has to
 copy dates, descriptions and balances; the arithmetic and validation are ours.
 
-- Needs `OPENAI_API_KEY` (set it in your shell or `FIN_DATA_DIR/config/.env`).
-- Install the extra: `pip install -e '.[ai]'`.
+- Needs `OPENAI_API_KEY` (set it in `~/.config/fin/.env`, your shell, or the data repo's `config/.env`).
+- Install the `[ai]` extra (included by `make install` / `uv tool install '.[ai]'`).
 - Model defaults to `gpt-4o-mini`; override with `OPENAI_MODEL`.
 
 > **Privacy:** `--ai-fallback` sends the statement's text to OpenAI, an external

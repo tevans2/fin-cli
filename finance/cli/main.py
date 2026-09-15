@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+from finance import settings
 from finance.paths import DataDirError, get_data_paths, validate_data_dir
 from finance.services import budget as budget_service
 from finance.services.compare import build_compare_dataset
@@ -28,7 +29,8 @@ def cmd_doctor(_: argparse.Namespace) -> int:
         print(f"ERROR: {exc}")
         return 1
 
-    print(f"FIN_DATA_DIR: {paths.root}")
+    print(f"Config dir:   {settings.config_dir()}")
+    print(f"Data dir:     {paths.root}  [{settings.source_of('data_dir')}]")
     errors = validate_data_dir(paths)
     if errors:
         print("Data directory validation failed:")
@@ -54,11 +56,82 @@ def cmd_init_data(args: argparse.Namespace) -> int:
         print("Use --force to initialize inside a non-empty directory.")
         return 1
     initialize_data_dir(target)
+    settings.set_value("data_dir", str(target))
     print(f"Initialized V2 data dir: {target}")
-    print("Next steps:")
-    print(f"  export FIN_DATA_DIR={target}")
-    print("  cd <your-data-repo> && git-crypt init")
+    print(f"Saved data dir to {settings.config_file()} — no need to export FIN_DATA_DIR.")
+    print("Next step (optional): cd <your-data-repo> && git-crypt init")
     return 0
+
+
+def _version() -> str:
+    try:
+        from importlib.metadata import version
+
+        return version("finance-v2")
+    except Exception:
+        return "0.1.0"
+
+
+def cmd_config_show(_: argparse.Namespace) -> int:
+    cfg = settings.config_file()
+    env = settings.env_file()
+    print(f"Config dir:  {settings.config_dir()}")
+    print(f"Config file: {cfg}  {'(exists)' if cfg.exists() else '(not created yet)'}")
+    print(f"Env file:    {env}  {'(exists)' if env.exists() else '(none)'}")
+    print()
+    for key, info in settings.resolved().items():
+        value = info["value"]
+        shown = value if value not in (None, "") else "(unset)"
+        print(f"  {key:14} = {str(shown):<42} [{info['source']}]")
+    return 0
+
+
+def cmd_config_get(args: argparse.Namespace) -> int:
+    value = settings.get(args.key)
+    print("" if value is None else value)
+    return 0
+
+
+def cmd_config_set(args: argparse.Namespace) -> int:
+    key = settings.normalize_key(args.key)
+    value = args.value
+    if key == "data_dir":
+        value = str(Path(value).expanduser().resolve())
+    try:
+        path = settings.set_value(key, value)
+    except KeyError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    print(f"Set {key} = {value}")
+    print(f"Wrote {path}")
+    return 0
+
+
+def cmd_config_unset(args: argparse.Namespace) -> int:
+    try:
+        settings.set_value(args.key, None)
+    except KeyError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    print(f"Unset {settings.normalize_key(args.key)}")
+    return 0
+
+
+def cmd_config_path(_: argparse.Namespace) -> int:
+    print(settings.config_file())
+    return 0
+
+
+def cmd_config_edit(_: argparse.Namespace) -> int:
+    import os
+    import subprocess
+
+    editor = os.getenv("VISUAL") or os.getenv("EDITOR") or "vi"
+    path = settings.config_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_text("")
+    return subprocess.call([*editor.split(), str(path)])
 
 
 def cmd_sync(args: argparse.Namespace) -> int:
@@ -452,10 +525,27 @@ def cmd_data_commit(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fin", description="Finance V2 CLI")
+    parser.add_argument("--version", action="version", version=f"fin {_version()}")
     sub = parser.add_subparsers(dest="command")
 
-    doctor = sub.add_parser("doctor", help="Validate FIN_DATA_DIR and core files")
+    doctor = sub.add_parser("doctor", help="Validate the data directory and core files")
     doctor.set_defaults(func=cmd_doctor)
+
+    config_p = sub.add_parser("config", help="View or change app settings (~/.config/fin)")
+    config_sub = config_p.add_subparsers(dest="config_command", required=True)
+    config_sub.add_parser("show", help="Show config dir and resolved settings").set_defaults(func=cmd_config_show)
+    config_sub.add_parser("path", help="Print the config file path").set_defaults(func=cmd_config_path)
+    config_sub.add_parser("edit", help="Open the config file in $EDITOR").set_defaults(func=cmd_config_edit)
+    c_get = config_sub.add_parser("get", help="Print one setting's value")
+    c_get.add_argument("key")
+    c_get.set_defaults(func=cmd_config_get)
+    c_set = config_sub.add_parser("set", help="Set a setting, eg `fin config set data-dir <path>`")
+    c_set.add_argument("key")
+    c_set.add_argument("value")
+    c_set.set_defaults(func=cmd_config_set)
+    c_unset = config_sub.add_parser("unset", help="Remove a setting")
+    c_unset.add_argument("key")
+    c_unset.set_defaults(func=cmd_config_unset)
 
     init_data = sub.add_parser("init-data", help="Initialize a new V2 data directory")
     init_data.add_argument("path", help="Target path for the separate finance data repo")

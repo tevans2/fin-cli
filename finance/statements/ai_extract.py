@@ -21,7 +21,6 @@ from finance.statements.model import BalanceChainError, StatementFormatError, St
 from finance.statements.normalize import parse_date, to_decimal
 from finance.statements.profile import StatementProfile
 
-DEFAULT_MODEL = "gpt-4o-mini"
 MAX_CHARS = 120_000  # guardrail against enormous PDFs blowing the context/budget
 
 _SYSTEM_PROMPT = (
@@ -208,17 +207,18 @@ def extract_pdf_rows(
     the validation is strict (it must match the statement's printed totals), so a
     passing result is trustworthy.
     """
+    from finance import settings
     from finance.config import ensure_env_loaded
 
     ensure_env_loaded()
-    model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
-    attempts = max(1, int(os.getenv("FIN_AI_ATTEMPTS", "3")))
-    settings = profile.pdf or {}
+    model = settings.get("openai_model")
+    attempts = max(1, int(settings.get("ai_attempts")))
+    pdf_settings = profile.pdf or {}
     text = extract_pdf_text(
         Path(path),
         password=password,
-        x_tolerance=settings.get("x_tolerance"),
-        y_tolerance=settings.get("y_tolerance", 1),
+        x_tolerance=pdf_settings.get("x_tolerance"),
+        y_tolerance=pdf_settings.get("y_tolerance", 1),
     )
     if not text.strip():
         raise StatementFormatError("Could not extract any text from the PDF to send to the AI")
