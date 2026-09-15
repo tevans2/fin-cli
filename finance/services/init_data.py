@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-import yaml
 
+import yaml
 
 DEFAULT_BANKS = {
     "banks": {
@@ -60,8 +60,39 @@ DEFAULT_ACCOUNTS = "; Account declarations for picker and journal ergonomics\n\n
 
 DEFAULT_MAIN_JOURNAL = "; V2 main journal\n\ninclude manual.journal\ninclude generated/investec.journal\ninclude generated/tyme.journal\ninclude generated/investments.journal\n"
 DEFAULT_MANUAL_JOURNAL = "; Manual finance entries\n"
-DEFAULT_GITIGNORE = "logs/\ntmp/\nraw/\nnormalized/\ncache/\n*.wal\n*.shm\nruntime/\n"
-DEFAULT_GITATTRIBUTES = "config/** filter=git-crypt diff=git-crypt\ntransactions/** filter=git-crypt diff=git-crypt\njournal/** filter=git-crypt diff=git-crypt\nstate/** filter=git-crypt diff=git-crypt\n"
+DEFAULT_GITIGNORE = "\n".join(
+    [
+        "logs/",
+        "tmp/",
+        "raw/",
+        "normalized/",
+        "cache/",
+        "*.wal",
+        "*.shm",
+        "runtime/",
+        ".DS_Store",
+        "Thumbs.db",
+        "",
+    ]
+)
+
+# Every tier that can hold sensitive data is git-crypt encrypted, plus a
+# catch-all for statement documents wherever they land. imports/ and
+# investments/ were easy to miss before, which left raw statements and holdings
+# in plaintext.
+DEFAULT_GITATTRIBUTES = "\n".join(
+    [
+        "config/** filter=git-crypt diff=git-crypt",
+        "transactions/** filter=git-crypt diff=git-crypt",
+        "journal/** filter=git-crypt diff=git-crypt",
+        "state/** filter=git-crypt diff=git-crypt",
+        "investments/** filter=git-crypt diff=git-crypt",
+        "imports/** filter=git-crypt diff=git-crypt",
+        "*.csv filter=git-crypt diff=git-crypt",
+        "*.pdf filter=git-crypt diff=git-crypt",
+        "",
+    ]
+)
 
 
 def initialize_data_dir(target: Path) -> None:

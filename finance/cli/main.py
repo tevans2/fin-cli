@@ -46,6 +46,15 @@ def cmd_doctor(_: argparse.Namespace) -> int:
     print(f"Main journal:   {paths.main_journal}")
     print(f"Manual journal: {paths.manual_journal}")
     print(f"Sync state:     {paths.sync_state}")
+
+    from finance.services.security import check_encryption_coverage
+
+    warnings = check_encryption_coverage(paths.root)
+    if warnings:
+        print("\nSecurity warnings:")
+        for warning in warnings:
+            print(f"  ⚠ {warning}")
+        print("  Fix: add the paths to .gitattributes (filter=git-crypt) or gitignore raw statements.")
     return 0
 
 
