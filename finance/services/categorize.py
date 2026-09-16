@@ -122,3 +122,28 @@ def apply_splits(
 
 def rebuild_journal(bank: str) -> None:
     build_bank_journal(bank)
+
+
+def snapshot(bank: str, txn_id: str) -> dict | None:
+    """The full record for an id, as a dict (an undo/redo checkpoint), or None."""
+    for record in load_bank_transactions(bank):
+        if record.id == txn_id:
+            return record.to_dict()
+    return None
+
+
+def restore_record(bank: str, record: dict) -> bool:
+    """Overwrite the transaction sharing this id with the given snapshot, exactly.
+
+    The inverse primitive behind undo/redo: the caller keeps before/after
+    snapshots and writes whichever direction it wants back.
+    """
+    target = TransactionRecord.from_dict(record)
+    records = load_bank_transactions(bank)
+    for i, existing in enumerate(records):
+        if existing.id == target.id:
+            records[i] = target
+            replace_transactions(bank, records)
+            build_bank_journal(bank)
+            return True
+    return False

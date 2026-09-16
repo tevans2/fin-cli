@@ -80,6 +80,25 @@ def test_apply_and_reject(client):
     assert {t["id"]: t for t in txns}["u2"]["category"] == "expenses:unknown"
 
 
+def test_apply_returns_before_after_and_restore_undoes(client):
+    resp = client.post("/categorize/apply",
+                       json={"bank": "investec", "id": "u2", "category": "expenses:other"}).json()
+    assert resp["before"]["category"] == "expenses:unknown"
+    assert resp["after"]["category"] == "expenses:other"
+
+    # undo: restore the "before" snapshot
+    assert client.post("/categorize/restore",
+                       json={"bank": "investec", "record": resp["before"]}).json()["ok"] is True
+    u2 = {t["id"]: t for t in client.get("/transactions", params={"bank": "investec"}).json()}["u2"]
+    assert u2["category"] == "expenses:unknown"
+
+    # redo: restore the "after" snapshot
+    assert client.post("/categorize/restore",
+                       json={"bank": "investec", "record": resp["after"]}).json()["ok"] is True
+    u2 = {t["id"]: t for t in client.get("/transactions", params={"bank": "investec"}).json()}["u2"]
+    assert u2["category"] == "expenses:other"
+
+
 def test_apply_splits(client):
     ok = client.post("/categorize/apply", json={
         "bank": "investec", "id": "u2",

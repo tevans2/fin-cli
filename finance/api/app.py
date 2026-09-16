@@ -44,6 +44,11 @@ class RejectBody(BaseModel):
     id: str
 
 
+class RestoreBody(BaseModel):
+    bank: str
+    record: dict
+
+
 class CategoryAddBody(BaseModel):
     category: str
 
@@ -172,10 +177,11 @@ def create_app() -> FastAPI:
 
     @app.post("/categorize/apply", dependencies=guard)
     def apply(body: ApplyBody) -> dict:
-        from finance.services.categorize import apply_category, apply_splits
+        from finance.services.categorize import apply_category, apply_splits, rebuild_journal, snapshot
         from finance.services.transactions import load_bank_transactions
 
         with _write_lock:
+            before = snapshot(body.bank, body.id)
             if body.splits:
                 record = next((r for r in load_bank_transactions(body.bank) if r.id == body.id), None)
                 if record is None:
@@ -189,26 +195,43 @@ def create_app() -> FastAPI:
                 ok = apply_category(body.bank, body.id, body.category, merchant=body.merchant)
             else:
                 raise HTTPException(400, "provide category or splits")
-            from finance.services.categorize import rebuild_journal
 
             rebuild_journal(body.bank)
+            after = snapshot(body.bank, body.id)
             mark_dirty()
-        return {"ok": ok}
+        return {"ok": ok, "before": before, "after": after}
 
     @app.post("/categorize/confirm", dependencies=guard)
     def confirm_route(body: ConfirmBody) -> dict:
-        from finance.services.categorize import confirm
+        from finance.services.categorize import confirm, snapshot
 
         with _write_lock:
+            before = [snapshot(body.bank, i) for i in body.ids]
             n = confirm(body.bank, body.ids)
-        return {"confirmed": n}
+            after = [snapshot(body.bank, i) for i in body.ids]
+            mark_dirty()
+        return {"confirmed": n, "before": before, "after": after}
 
     @app.post("/categorize/reject", dependencies=guard)
     def reject_route(body: RejectBody) -> dict:
-        from finance.services.categorize import reject
+        from finance.services.categorize import reject, snapshot
 
         with _write_lock:
+            before = snapshot(body.bank, body.id)
             ok = reject(body.bank, body.id)
+            after = snapshot(body.bank, body.id)
+            mark_dirty()
+        return {"ok": ok, "before": before, "after": after}
+
+    @app.post("/categorize/restore", dependencies=guard)
+    def restore_route(body: RestoreBody) -> dict:
+        from finance.services.categorize import restore_record
+
+        with _write_lock:
+            try:
+                ok = restore_record(body.bank, body.record)
+            except (ValueError, KeyError, TypeError) as exc:
+                raise HTTPException(400, str(exc)) from exc
             mark_dirty()
         return {"ok": ok}
 

@@ -6,7 +6,16 @@ import pytest
 
 from finance.classify.allocation import Allocation
 from finance.models.transaction import TransactionRecord
-from finance.services.categorize import apply_category, apply_splits, auto_apply, build_plan, confirm, reject
+from finance.services.categorize import (
+    apply_category,
+    apply_splits,
+    auto_apply,
+    build_plan,
+    confirm,
+    reject,
+    restore_record,
+    snapshot,
+)
 from finance.services.init_data import initialize_data_dir
 from finance.services.transactions import load_bank_transactions
 from finance.storage.jsonl_store import JsonlTransactionStore
@@ -106,6 +115,31 @@ def test_classifier_cache_classifies(data_dir):
     unknown_starbucks = [r for r in load_bank_transactions("investec") if r.id == "u1"][0]
     result = classifier.classify(unknown_starbucks)
     assert result.recommended == "expenses:coffee"
+
+
+def test_snapshot_and_restore_round_trip(data_dir):
+    # snapshot the uncategorized record, categorize it, then restore the snapshot
+    before = snapshot("investec", "u2")
+    assert before["category"] == "expenses:unknown"
+
+    apply_category("investec", "u2", "expenses:other")
+    after = snapshot("investec", "u2")
+    assert after["category"] == "expenses:other"
+    assert after["reviewed"] is True
+
+    assert restore_record("investec", before) is True
+    restored = {r.id: r for r in load_bank_transactions("investec")}["u2"]
+    assert restored.category == "expenses:unknown"
+
+    # redo direction: restore the "after" snapshot
+    assert restore_record("investec", after) is True
+    assert {r.id: r for r in load_bank_transactions("investec")}["u2"].category == "expenses:other"
+
+
+def test_restore_unknown_id_is_noop(data_dir):
+    ghost = snapshot("investec", "u2")
+    ghost["id"] = "does-not-exist"
+    assert restore_record("investec", ghost) is False
 
 
 def test_apply_splits_partitions_amount(data_dir):
