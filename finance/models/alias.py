@@ -14,7 +14,7 @@ class AliasRule:
     notes: str | None = None
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "AliasRule":
+    def from_dict(cls, data: dict[str, Any]) -> AliasRule:
         match = data.get("match", {})
         return cls(
             name=data["name"],

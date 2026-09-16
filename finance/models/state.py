@@ -16,7 +16,7 @@ class SyncState:
     banks: dict[str, BankSyncState] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "SyncState":
+    def from_dict(cls, data: dict[str, Any]) -> SyncState:
         banks = {
             name: BankSyncState(**state)
             for name, state in data.get("banks", {}).items()

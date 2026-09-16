@@ -44,7 +44,8 @@ def filter_unknown_transactions(bank: str, category: str = "both") -> list[Trans
 
 
 def update_transaction_category(
-    bank: str, txn_id: str, category: str, source: str = "manual", merchant: str | None = None
+    bank: str, txn_id: str, category: str, source: str = "manual",
+    merchant: str | None = None, reviewed: bool = True,
 ) -> bool:
     config = load_app_config()
     store = JsonlTransactionStore(config.paths.transactions_dir)
@@ -60,6 +61,7 @@ def update_transaction_category(
             if record.id == txn_id:
                 record.category = category
                 record.category_source = source
+                record.reviewed = reviewed
                 if merchant:
                     record.merchant = merchant
                 record.updated_at = utc_now_iso()
@@ -73,7 +75,8 @@ def update_transaction_category(
 
 
 def update_transaction_splits(
-    bank: str, txn_id: str, splits: list[TransactionSplit], source: str = "manual:split", merchant: str | None = None
+    bank: str, txn_id: str, splits: list[TransactionSplit], source: str = "manual:split",
+    merchant: str | None = None, reviewed: bool = True,
 ) -> bool:
     config = load_app_config()
     store = JsonlTransactionStore(config.paths.transactions_dir)
@@ -90,6 +93,7 @@ def update_transaction_splits(
                 record.splits = splits
                 record.category = "split"
                 record.category_source = source
+                record.reviewed = reviewed
                 if merchant:
                     record.merchant = merchant
                 record.updated_at = utc_now_iso()
@@ -100,6 +104,54 @@ def update_transaction_splits(
             store.write_file(path, records)
             break
     return updated_any
+
+
+def set_reviewed(bank: str, txn_ids: set[str], value: bool = True) -> int:
+    config = load_app_config()
+    store = JsonlTransactionStore(config.paths.transactions_dir)
+    bank_dir = config.paths.transactions_dir / bank
+    if not bank_dir.exists():
+        return 0
+    updated = 0
+    for path in sorted(bank_dir.glob("*.jsonl")):
+        records = store.read_file(path)
+        changed = False
+        for record in records:
+            if record.id in txn_ids and record.reviewed != value:
+                record.reviewed = value
+                record.updated_at = utc_now_iso()
+                changed = True
+                updated += 1
+        if changed:
+            store.write_file(path, records)
+    return updated
+
+
+def clear_transaction_category(bank: str, txn_id: str) -> bool:
+    """Reset a transaction to uncategorized (reject a classification)."""
+    from decimal import Decimal
+
+    config = load_app_config()
+    store = JsonlTransactionStore(config.paths.transactions_dir)
+    bank_dir = config.paths.transactions_dir / bank
+    if not bank_dir.exists():
+        return False
+    for path in sorted(bank_dir.glob("*.jsonl")):
+        records = store.read_file(path)
+        changed = False
+        for record in records:
+            if record.id == txn_id:
+                record.category = "expenses:unknown" if Decimal(record.amount) < 0 else "income:unknown"
+                record.category_source = "default:unknown"
+                record.splits = []
+                record.reviewed = True   # dealt with; it now lives in the uncategorized inbox
+                record.updated_at = utc_now_iso()
+                changed = True
+                break
+        if changed:
+            store.write_file(path, records)
+            return True
+    return False
 
 
 def update_transaction_alias(bank: str, txn_id: str, alias: str) -> bool:

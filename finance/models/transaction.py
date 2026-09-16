@@ -32,6 +32,7 @@ class TransactionRecord:
     payee: str | None = None
     alias: str | None = None
     merchant: str | None = None
+    reviewed: bool = True   # False = an auto-classification awaiting human review
     notes: str | None = None
     tags: list[str] = field(default_factory=list)
     updated_at: str | None = None

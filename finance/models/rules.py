@@ -34,6 +34,7 @@ class Rule:
     priority: int = 100
     enabled: bool = True
     notes: str | None = None
+    auto_confirm: bool = False   # reserved: when True, matches skip the review queue (not wired yet)
     match: RuleMatch = field(default_factory=RuleMatch)
 
     @classmethod
@@ -46,6 +47,7 @@ class Rule:
             priority=data.get("priority", 100),
             enabled=data.get("enabled", True),
             notes=data.get("notes"),
+            auto_confirm=data.get("auto_confirm", False),
             match=match,
         )
 
@@ -56,5 +58,7 @@ class Rule:
             data["enabled"] = False
         if self.notes:
             data["notes"] = self.notes
+        if self.auto_confirm:
+            data["auto_confirm"] = True
         data["match"] = match
         return data
