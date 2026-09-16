@@ -61,6 +61,15 @@ def test_build_plan_recommends_for_remaining(data_dir):
     assert classification.merchant == "Mystery Deli"
 
 
+def test_all_scope_returns_every_transaction(data_dir):
+    auto_apply("investec")   # clears the uncat inbox down to one
+    all_ids = {rec.id for rec, _ in build_plan("investec", scope="all")}
+    assert all_ids == {"h1", "h2", "h3", "u1", "u2"}   # categorized + reviewed included
+    # newest-first ordering
+    dates = [rec.date for rec, _ in build_plan("investec", scope="all")]
+    assert dates == sorted(dates, reverse=True)
+
+
 def test_auto_apply_marks_needs_review(data_dir):
     auto_apply("investec")
     by_id = {r.id: r for r in load_bank_transactions("investec")}

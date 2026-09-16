@@ -44,7 +44,8 @@ def build_plan(
 ) -> list[tuple[TransactionRecord, Classification]]:
     """Transactions to act on for a scope, each with its recommendation/candidates.
 
-    scope 'uncat' = uncategorized inbox; 'review' = auto-guesses awaiting review.
+    scope 'uncat' = uncategorized inbox; 'review' = auto-guesses awaiting review;
+    'all' = every transaction (newest first), for browsing/re-categorizing.
     Pass a prebuilt ``history``/``rules`` (e.g. a cached Classifier) to skip the
     rebuild and stay fast.
     """
@@ -52,7 +53,12 @@ def build_plan(
         history = build_history(load_all_transactions())   # cross-bank learning
     if rules is None:
         rules = _rules()
-    records = _review_records(bank) if scope == "review" else filter_unknown_transactions(bank)
+    if scope == "review":
+        records = _review_records(bank)
+    elif scope == "all":
+        records = sorted(load_bank_transactions(bank), key=lambda r: r.date, reverse=True)
+    else:
+        records = filter_unknown_transactions(bank)
     return [(record, classify(record, history=history, rules=rules)) for record in records]
 
 
