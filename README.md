@@ -315,6 +315,19 @@ fin hledger balance
 fin compare investec --account savings --date-mode action --begin 2026-03-01 --end 2026-03-31
 ```
 
+### Analysis
+
+Insight beyond raw `hledger` tables, over the canonical store:
+
+```bash
+fin analyze cashflow --months 6          # monthly income, spend, net, savings rate
+fin analyze recurring --min 4            # recurring merchants (subscriptions, habits); flags lapsed ones
+fin analyze recurring --subscriptions    # only stable-amount, still-active ones
+fin analyze trends --top 8               # category spend this month vs trailing average
+```
+
+Note: the latest month is compared as-is, so a partial current month reads low.
+
 ### Verification
 
 ```bash

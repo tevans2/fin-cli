@@ -432,6 +432,73 @@ def cmd_categorize(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_analyze_recurring(args: argparse.Namespace) -> int:
+    from finance.services.analysis import recurring
+
+    try:
+        items = recurring(args.bank, min_occurrences=args.min)
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    if args.subscriptions:
+        items = [r for r in items if r.amount_stable and r.active]
+    if not items:
+        print("No recurring merchants found.")
+        return 0
+    print(f"{'merchant':30}{'cadence':12}{'typical':>11}{'n':>4}{'last':>12}  flags")
+    print("-" * 82)
+    for r in items:
+        flags = []
+        if not r.active:
+            flags.append("lapsed")
+        if r.amount_stable:
+            flags.append("stable")
+        print(f"{r.merchant[:29]:30}{r.cadence:12}{r.typical_amount:>11,.2f}{r.occurrences:>4}{r.last:>12}  {' '.join(flags)}")
+    print(f"\n{len(items)} recurring merchant(s)")
+    return 0
+
+
+def cmd_analyze_cashflow(args: argparse.Namespace) -> int:
+    from finance.services.analysis import cashflow
+
+    try:
+        rows = cashflow(args.bank, months=args.months)
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    if not rows:
+        print("No data.")
+        return 0
+    print(f"{'month':10}{'income':>13}{'spend':>13}{'net':>13}{'saved':>8}")
+    print("-" * 57)
+    for row in rows:
+        rate = "-" if row.savings_rate is None else f"{row.savings_rate * 100:.0f}%"
+        print(f"{row.month:10}{row.income:>13,.2f}{row.spend:>13,.2f}{row.net:>+13,.2f}{rate:>8}")
+    return 0
+
+
+def cmd_analyze_trends(args: argparse.Namespace) -> int:
+    from finance.services.analysis import trends
+
+    try:
+        rows, columns = trends(args.bank, months=args.months, depth=args.depth)
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    if not rows:
+        print("No expense data.")
+        return 0
+    shown = rows[: args.top] if args.top else rows
+    latest = columns[-1]
+    print(f"Category spend — {latest} vs trailing average of prior {len(columns) - 1} month(s)\n")
+    print(f"{'category':34}{'this month':>13}{'prev avg':>13}{'change':>13}")
+    print("-" * 73)
+    for t in shown:
+        pct = "" if t.change_pct is None else f" ({t.change_pct * 100:+.0f}%)"
+        print(f"{t.category[:33]:34}{t.latest:>13,.2f}{t.previous_avg:>13,.2f}{t.change:>+13,.2f}{pct}")
+    return 0
+
+
 def cmd_sync(args: argparse.Namespace) -> int:
     try:
         result = sync_bank(
@@ -997,6 +1064,27 @@ def build_parser() -> argparse.ArgumentParser:
 
     verify = sub.add_parser("verify", help="Reconcile each account's latest statement balance against the ledger")
     verify.set_defaults(func=cmd_verify)
+
+    analyze = sub.add_parser("analyze", help="Analyze spending: recurring, cashflow, trends")
+    analyze_sub = analyze.add_subparsers(dest="analyze_command", required=True)
+
+    a_rec = analyze_sub.add_parser("recurring", help="Detect recurring merchants / subscriptions")
+    a_rec.add_argument("--bank", help="Limit to one bank (default: all)")
+    a_rec.add_argument("--min", type=int, default=3, help="Minimum occurrences to consider (default: 3)")
+    a_rec.add_argument("--subscriptions", action="store_true", help="Only stable-amount, still-active ones")
+    a_rec.set_defaults(func=cmd_analyze_recurring)
+
+    a_cf = analyze_sub.add_parser("cashflow", help="Monthly income, spend, net and savings rate")
+    a_cf.add_argument("--bank", help="Limit to one bank (default: all)")
+    a_cf.add_argument("--months", type=int, help="Show only the last N months")
+    a_cf.set_defaults(func=cmd_analyze_cashflow)
+
+    a_tr = analyze_sub.add_parser("trends", help="Category spend: this month vs trailing average")
+    a_tr.add_argument("--bank", help="Limit to one bank (default: all)")
+    a_tr.add_argument("--months", type=int, default=6, help="Window in months (default: 6)")
+    a_tr.add_argument("--depth", type=int, default=2, help="Roll categories to this colon-depth (default: 2)")
+    a_tr.add_argument("--top", type=int, help="Show only the top N movers")
+    a_tr.set_defaults(func=cmd_analyze_trends)
 
     inv_set = sub.add_parser("investment-set", help="Record a new investment valuation")
     inv_set.add_argument("name", help="Short investment name, eg easyequities")
