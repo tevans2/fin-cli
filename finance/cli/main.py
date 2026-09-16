@@ -266,6 +266,149 @@ def cmd_merchants_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _prompt_category(taxonomy) -> str | None:
+    import difflib
+
+    value = input("    category: ").strip()
+    if not value:
+        return None
+    if taxonomy.enforced and not taxonomy.is_valid(value):
+        near = difflib.get_close_matches(value, taxonomy.sorted(), n=3, cutoff=0.5)
+        if near:
+            print(f"    not in taxonomy — close matches: {', '.join(near)}")
+        if input(f"    use '{value}' anyway? [y/N] ").strip().lower() != "y":
+            return None
+    return value
+
+
+def _prompt_split(record, candidates):
+    from decimal import Decimal
+
+    from finance.classify.allocation import Allocation, AllocationError, magnitude, validate_allocations
+
+    total = magnitude(record.amount)
+    print(f"    split {total} {record.currency} — enter 'category amount' per line; a category alone takes the remainder; blank cancels.")
+    if candidates:
+        print("    candidates: " + ", ".join(f"{n}) {c.category}" for n, c in enumerate(candidates, 1)))
+    allocations: list = []
+    remaining = total
+    while remaining > 0:
+        line = input(f"    remaining {remaining}: ").strip()
+        if not line:
+            print("    cancelled")
+            return None
+        head, _, tail = line.rpartition(" ")
+        token, amount_text = (head, tail) if head else (tail, "")
+        if token.isdigit() and candidates and 1 <= int(token) <= len(candidates):
+            category = candidates[int(token) - 1].category
+        else:
+            category = token
+        if amount_text:
+            try:
+                amount = Decimal(amount_text)
+            except Exception:
+                print("    bad amount")
+                continue
+        else:
+            amount = remaining
+        if amount <= 0 or amount > remaining:
+            print(f"    amount must be > 0 and <= {remaining}")
+            continue
+        allocations.append(Allocation(category, f"{amount:.2f}"))
+        remaining -= amount
+    try:
+        validate_allocations(allocations, record.amount)
+    except AllocationError as exc:
+        print(f"    {exc}")
+        return None
+    return allocations
+
+
+def cmd_categorize(args: argparse.Namespace) -> int:
+    import sys
+
+    from finance.classify.taxonomy import load_taxonomy
+    from finance.services.categorize import apply_category, apply_splits, auto_apply, build_plan, rebuild_journal
+
+    try:
+        if not args.dry_run:
+            summary = auto_apply(args.bank)
+            print(f"Auto-categorized {summary['auto_applied']} confident transaction(s); {summary['remaining']} to review.")
+        plan = build_plan(args.bank)
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+
+    if args.dry_run:
+        auto = sum(1 for _, c in plan if c.auto)
+        print(f"[dry-run] {auto} would auto-apply, {len(plan) - auto} would need review:")
+        rows = plan[: args.limit] if args.limit else plan
+        for record, c in rows:
+            tag = "AUTO" if c.auto else "ask "
+            print(
+                f"  {tag}  {record.date} {record.amount:>10} {record.currency}  "
+                f"{(c.recommended or '-'):<26} [{c.source} {c.confidence * 100:.0f}%]  {record.description[:38]}"
+            )
+        return 0
+
+    if args.auto:
+        return 0
+
+    if not plan:
+        print("Nothing to review.")
+        return 0
+    if not sys.stdin.isatty():
+        print(f"{len(plan)} transaction(s) need review — run in a terminal to categorize interactively.")
+        return 0
+
+    taxonomy = load_taxonomy(get_data_paths().categories_config)
+    reviewed = 0
+    for index, (record, c) in enumerate(plan, 1):
+        print()
+        print(f"[{index}/{len(plan)}]  {record.date}  {record.amount:>11} {record.currency}   merchant={c.merchant or '?'}")
+        print(f"    {record.description[:72]}")
+        if c.candidates:
+            print("    " + "  ".join(f"{n}) {cand.category} {cand.share * 100:.0f}%" for n, cand in enumerate(c.candidates, 1)))
+        print(f"    recommended: {c.recommended or '(none)'}   [{c.source} {c.confidence * 100:.0f}%]")
+        action = input("    [Enter=accept  #=pick  c=category  s=split  k=skip  q=quit] > ").strip()
+
+        if action.lower() == "q":
+            break
+        if action.lower() == "k":
+            continue
+
+        chosen = None
+        if action == "":
+            chosen = c.recommended
+            if not chosen:
+                print("    no recommendation — use c or s")
+                continue
+        elif action.isdigit() and 1 <= int(action) <= len(c.candidates):
+            chosen = c.candidates[int(action) - 1].category
+        elif action.lower() == "c":
+            chosen = _prompt_category(taxonomy)
+            if not chosen:
+                continue
+        elif action.lower() == "s":
+            allocations = _prompt_split(record, c.candidates)
+            if not allocations:
+                continue
+            apply_splits(args.bank, record, allocations, merchant=c.merchant)
+            reviewed += 1
+            continue
+        else:
+            print("    unrecognized")
+            continue
+
+        apply_category(args.bank, record.id, chosen, source="manual", merchant=c.merchant)
+        reviewed += 1
+
+    rebuild_journal(args.bank)
+    remaining = len(build_plan(args.bank))
+    print(f"\nReviewed {reviewed}. {remaining} still uncategorized.")
+    return 0
+
+
 def cmd_sync(args: argparse.Namespace) -> int:
     try:
         result = sync_bank(
@@ -746,6 +889,15 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("bank", help="Bank/provider name, eg investec")
     review.add_argument("--category", choices=["expenses", "income", "both"], default="both")
     review.set_defaults(func=cmd_review)
+
+    categorize = sub.add_parser(
+        "categorize", help="Auto-apply confident categories, then review the rest with recommendations"
+    )
+    categorize.add_argument("bank", help="Bank/provider name, eg investec")
+    categorize.add_argument("--auto", action="store_true", help="Only auto-apply confident matches; no prompts")
+    categorize.add_argument("--dry-run", action="store_true", help="Show what would happen; change nothing")
+    categorize.add_argument("--limit", type=int, help="With --dry-run, cap the rows shown")
+    categorize.set_defaults(func=cmd_categorize)
 
     rules = sub.add_parser("rules-list", help="List active categorization rules")
     rules.set_defaults(func=cmd_rules_list)
