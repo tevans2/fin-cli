@@ -6,6 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from finance import settings
+from finance.branding import banner
 from finance.paths import DataDirError, get_data_paths, validate_data_dir
 from finance.services import budget as budget_service
 from finance.services.compare import build_compare_dataset
@@ -1015,7 +1016,11 @@ def cmd_data_commit(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="fin", description="Finance V2 CLI")
+    parser = argparse.ArgumentParser(
+        prog="fin",
+        description=banner(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--version", action="version", version=f"fin {_version()}")
     sub = parser.add_subparsers(dest="command")
 
