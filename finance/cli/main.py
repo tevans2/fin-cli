@@ -327,8 +327,10 @@ def _prompt_split(record, candidates):
 def cmd_categorize(args: argparse.Namespace) -> int:
     import sys
 
+    from finance.classify.normalize import merchant_key
     from finance.classify.taxonomy import load_taxonomy
     from finance.services.categorize import apply_category, apply_splits, auto_apply, build_plan, rebuild_journal
+    from finance.services.rules import create_rule
 
     try:
         if not args.dry_run:
@@ -402,6 +404,16 @@ def cmd_categorize(args: argparse.Namespace) -> int:
 
         apply_category(args.bank, record.id, chosen, source="manual", merchant=c.merchant)
         reviewed += 1
+
+        # offer to pin a rule — but only for merchants that aren't historically ambiguous
+        key = merchant_key(record.description)
+        if key and len(c.candidates) <= 1:
+            if input(f"    ↳ always categorize '{key}' as {chosen}? [y/N] ").strip().lower() == "y":
+                try:
+                    create_rule(chosen, merchant=key)
+                    print("    rule saved")
+                except Exception as exc:
+                    print(f"    could not save rule: {exc}")
 
     rebuild_journal(args.bank)
     remaining = len(build_plan(args.bank))
@@ -538,6 +550,29 @@ def cmd_rules_list(_: argparse.Namespace) -> int:
     for rule in rules:
         print(f"{rule['priority']:>4}  {rule['name']}  ->  {rule['category']}")
     print(f"Total rules: {len(rules)}")
+    return 0
+
+
+def cmd_rules_add(args: argparse.Namespace) -> int:
+    from finance.services.rules import create_rule
+
+    try:
+        name = create_rule(
+            args.category,
+            merchant=args.merchant,
+            description_regex=args.description_regex,
+            account=args.account,
+            institution=args.institution,
+            direction=args.direction,
+            amount_lt=args.amount_lt,
+            amount_gt=args.amount_gt,
+            currency=args.currency,
+            name=args.name,
+        )
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    print(f"Added rule '{name}' -> {args.category}")
     return 0
 
 
@@ -901,6 +936,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     rules = sub.add_parser("rules-list", help="List active categorization rules")
     rules.set_defaults(func=cmd_rules_list)
+
+    rules_add = sub.add_parser("rules-add", help="Add a categorization rule")
+    rules_add.add_argument("--category", required=True, help="Category to assign")
+    rules_add.add_argument("--merchant", help="Match this merchant key (see `fin merchants list`)")
+    rules_add.add_argument("--description-regex", help="Match this regex against the raw description")
+    rules_add.add_argument("--account", help="Match this source account, eg checking")
+    rules_add.add_argument("--institution", help="Match this institution, eg investec")
+    rules_add.add_argument("--direction", choices=["in", "out"], help="Match money in or money out")
+    rules_add.add_argument("--amount-lt", help="Match amount less than")
+    rules_add.add_argument("--amount-gt", help="Match amount greater than")
+    rules_add.add_argument("--currency", help="Match currency, eg ZAR")
+    rules_add.add_argument("--name", help="Rule name (auto-generated if omitted)")
+    rules_add.set_defaults(func=cmd_rules_add)
 
     rules_apply = sub.add_parser("rules-apply", help="Apply rules to canonical transactions")
     rules_apply.add_argument("bank", help="Bank/provider name, eg investec")
