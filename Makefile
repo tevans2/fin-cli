@@ -5,7 +5,7 @@ BANK    := investec
 ACCOUNT := checking
 MONTH   := this month
 
-.PHONY: install dev sync rules-apply verify \
+.PHONY: install dev sync categorize rules-apply verify \
         bs is expenses unknowns review \
         spend-month spend-trend top-spend monthly \
         net-worth net-income \
@@ -28,6 +28,9 @@ dev:         ## Sync the project venv for development (tests, linting)
 
 sync:        ## Fetch latest transactions from bank (BANK=investec ACCOUNT=checking)
 	$(FIN) sync $(BANK) --account $(ACCOUNT)
+
+categorize:  ## Assisted categorization: auto-apply confident, review the rest (BANK=investec)
+	$(FIN) categorize $(BANK)
 
 rules-apply: ## Auto-categorize transactions by applying rules.yaml
 	$(FIN) rules-apply $(BANK)

@@ -34,8 +34,8 @@ This keeps the system easier to reason about than a raw-import-first workflow wh
 - sync Investec transactions into canonical JSONL files
 - import CSV/PDF statements from any bank into canonical JSONL files, profile-driven and balance-chain validated
 - optional OpenAI fallback for hard PDFs (`--ai-fallback`), with the AI's output still balance-chain validated
-- apply categorization rules (`config/rules.yaml`)
-- list uncategorized transactions for review
+- assisted categorization: auto-apply confident matches, recommend the rest, split across categories
+- learn merchants from history and validate categories against a taxonomy (`config/categories.yaml`)
 - generate `hledger` journals from canonical transaction data
 - compare live bank-API transactions against the local journal
 - reconcile the ledger against bank statement balances (`fin verify`)
@@ -44,11 +44,10 @@ This keeps the system easier to reason about than a raw-import-first workflow wh
 - run `hledger` reports through the CLI
 - run basic git workflows against the separate data repo
 
-> **Interfaces:** the interactive TUIs, Streamlit dashboard, and web UI have been
-> removed. The project is currently focused on making the backend/core (especially
-> classification and analysis) complete and correct before a new frontend is designed.
-> Categorization is rules-driven for now (`fin rules-apply`); day-to-day viewing is
-> done through `hledger` and the `fin`/`make` report commands.
+> **Interfaces:** the Streamlit dashboard and web UI have been removed. The project
+> is focused on the backend/core; day-to-day viewing is done through `hledger` and
+> the `fin`/`make` report commands, and categorization through the assisted
+> `fin categorize` terminal flow. A richer frontend may come later.
 
 ---
 
@@ -107,6 +106,7 @@ A `Makefile` is included for common workflows. Run `make help` to list all targe
   install        Install the `fin` CLI on your PATH (uv tool, editable, with AI extra)
   dev            Sync the project venv for development (tests, linting)
   sync           Fetch latest transactions from bank (BANK=investec ACCOUNT=checking)
+  categorize     Assisted categorization: auto-apply confident, review the rest
   rules-apply    Auto-categorize transactions by applying rules.yaml
   verify         Reconcile each account's latest statement balance against the ledger
   monthly        Full monthly overview through a pager (MONTH="this month")
@@ -199,8 +199,7 @@ fin sync investec --account savings --begin 2026-01-01 --end 2026-04-09
 ### 4. Review and categorize transactions
 
 ```bash
-fin rules-apply investec   # auto-categorize using config/rules.yaml
-fin review investec        # list what's still uncategorized
+fin categorize investec    # auto-apply confident matches, then review the rest
 ```
 
 ### 5. Commit changes in the data repo
@@ -276,12 +275,33 @@ is a config task — see `docs/statement-import.md`. `--ai-fallback` sends state
 text to OpenAI only when deterministic PDF parsing fails, and validates the result
 the same way (needs `OPENAI_API_KEY` and the `[ai]` extra, included by `make install`).
 
-### Review and categorization
+### Categorization
+
+The main flow auto-applies confident categories, then walks the rest with a
+pre-filled recommendation (Enter accepts), numbered alternatives, and easy splits:
 
 ```bash
-fin rules-list                 # show active rules
-fin rules-apply investec       # auto-categorize by rules
-fin review investec            # list transactions still uncategorized
+fin categorize investec            # auto-apply + assisted review
+fin categorize investec --auto     # only apply the confident ones, no prompts
+fin categorize investec --dry-run  # preview what would happen
+fin categorize investec --ai       # ask OpenAI for a category on unknown merchants
+```
+
+In the review, per transaction: **Enter** accepts the recommendation, a **number**
+picks an alternative, **c** types a category (taxonomy-validated), **s** splits it
+across categories (e.g. `drinks 100`, then `food` for the remainder), **k** skips,
+**q** quits. After a manual choice on a non-ambiguous merchant it offers to save a
+rule so it auto-applies next time.
+
+Supporting commands:
+
+```bash
+fin merchants list --conflicted --sort conf   # merchants worth reviewing
+fin merchants show "pizza shed"               # a merchant's categories + example txns
+fin categories seed | list | check            # manage the category taxonomy
+fin rules-add --merchant "punk bar" --category expenses:lifestyle:drinks
+fin rules-list                                 # show active rules
+fin review investec                            # just list what's uncategorized
 ```
 
 ### Reporting
@@ -354,17 +374,17 @@ fin data-push
 
 ```bash
 fin sync investec
-fin rules-apply investec
-fin review investec              # inspect anything still uncategorized
+fin categorize investec         # auto-apply confident matches, review the rest
 fin verify                      # confirm the ledger matches the bank
 fin reports bs
 fin data-commit -m "Sync latest transactions"
 fin data-push
 ```
 
-Transactions that no rule matches stay as `expenses:unknown` / `income:unknown`.
-Add or refine rules in `config/rules.yaml` and re-run `fin rules-apply`. A richer
-interactive categorization flow is planned once the core is complete.
+`fin categorize` auto-applies confident matches (rules, or a merchant that's ≥95%
+consistent over ≥3 past transactions) and walks you through the rest with
+recommendations. Anything you skip stays `expenses:unknown` / `income:unknown`
+until the next run.
 
 ### Initial migration workflow
 
