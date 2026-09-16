@@ -601,6 +601,26 @@ def cmd_review(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+    try:
+        import uvicorn
+    except ImportError:
+        print("ERROR: API deps missing. Install with: pip install -e '.[api]'")
+        return 1
+    import json
+    import os
+    import secrets
+
+    token = os.environ.get("FIN_API_TOKEN") or secrets.token_urlsafe(24)
+    os.environ["FIN_API_TOKEN"] = token
+    runtime = settings.config_dir() / "runtime.json"
+    runtime.parent.mkdir(parents=True, exist_ok=True)
+    runtime.write_text(json.dumps({"url": f"http://{args.host}:{args.port}", "token": token}))
+    print(f"Serving fin API at http://{args.host}:{args.port}   (address+token in {runtime})")
+    uvicorn.run("finance.api.app:app", host=args.host, port=args.port, reload=args.reload)
+    return 0
+
+
 def cmd_verify(_: argparse.Namespace) -> int:
     try:
         results = verify_accounts()
@@ -1084,6 +1104,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     verify = sub.add_parser("verify", help="Reconcile each account's latest statement balance against the ledger")
     verify.set_defaults(func=cmd_verify)
+
+    serve = sub.add_parser("serve", help="Run the local API (for the TUI and web frontends)")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument("--reload", action="store_true", help="Auto-reload on code changes (dev)")
+    serve.set_defaults(func=cmd_serve)
 
     analyze = sub.add_parser("analyze", help="Analyze spending: recurring, cashflow, trends")
     analyze_sub = analyze.add_subparsers(dest="analyze_command", required=True)

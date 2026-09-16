@@ -16,6 +16,10 @@ dependencies = [
 ai = [
   "openai>=1.30",
 ]
+api = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+]
 dev = [
   "pytest>=8.0",
   "ruff>=0.5",
