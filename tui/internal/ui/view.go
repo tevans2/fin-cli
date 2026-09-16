@@ -221,7 +221,7 @@ func (m Model) renderHelp() string {
 	})
 	finderHelp := section("category finder", []row{
 		{"type", "filter categories"},
-		{"ctrl-j / ctrl-k", "move down / up"},
+		{"ctrl-n / ctrl-p", "move down / up"},
 		{"enter", "apply the selected category"},
 		{"esc", "cancel"},
 	})
@@ -330,7 +330,7 @@ func (m Model) footer() string {
 		return styles.Key.Render(":") + m.input.View()
 	}
 	if m.mode == finder {
-		return styles.Help.Render("enter select · ctrl-j/k move · esc cancel")
+		return styles.Help.Render("enter select · ctrl-n/p move · esc cancel")
 	}
 	if m.split.active {
 		return styles.Help.Render(m.splitHelp())

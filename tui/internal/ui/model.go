@@ -332,12 +332,12 @@ func (m Model) updateFinder(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case "ctrl+n", "ctrl+j", "down":
+	case "ctrl+n", "down":
 		if m.fcursor < len(m.filtered)-1 {
 			m.fcursor++
 		}
 		return m, nil
-	case "ctrl+p", "ctrl+k", "up":
+	case "ctrl+p", "up":
 		if m.fcursor > 0 {
 			m.fcursor--
 		}
