@@ -200,6 +200,20 @@ def cmd_categories_check(_: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_categories_rename(args: argparse.Namespace) -> int:
+    from finance.services.categories import rename_category
+
+    try:
+        result = rename_category(args.old, args.new)
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    print(f"Renamed {result['old']} -> {result['new']}")
+    print(f"  transactions updated: {result['transactions']}")
+    print(f"  files updated: {', '.join(result['files']) or '(none)'}")
+    return 0
+
+
 def cmd_merchants_list(args: argparse.Namespace) -> int:
     from finance.classify.history import build_history
     from finance.services.transactions import load_all_transactions
@@ -944,6 +958,12 @@ def build_parser() -> argparse.ArgumentParser:
     categories_sub.add_parser(
         "check", help="Report categories used in transactions but not in the taxonomy"
     ).set_defaults(func=cmd_categories_check)
+    c_rename = categories_sub.add_parser(
+        "rename", help="Rename/merge a category across transactions, taxonomy, journals and config"
+    )
+    c_rename.add_argument("old", help="Existing category, eg expenses:lifestyle:drinks")
+    c_rename.add_argument("new", help="New category, eg expenses:lifestyle:bars")
+    c_rename.set_defaults(func=cmd_categories_rename)
 
     merchants = sub.add_parser("merchants", help="Inspect merchants learned from categorized history")
     merchants_sub = merchants.add_subparsers(dest="merchants_command", required=True)
