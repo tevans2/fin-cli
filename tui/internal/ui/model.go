@@ -33,10 +33,11 @@ type Model struct {
 	filtered []string
 	fcursor  int
 
-	w, h    int
-	msg     string
-	loading bool
-	quit    bool
+	w, h     int
+	msg      string
+	loading  bool
+	showHelp bool
+	quit     bool
 }
 
 func New(c *api.Client) Model {
@@ -154,6 +155,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 	case tea.KeyMsg:
+		if m.showHelp { // help is a modal overlay: any key dismisses it
+			m.showHelp = false
+			return m, nil
+		}
 		switch m.mode {
 		case finder:
 			return m.updateFinder(msg)
@@ -192,6 +197,9 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r": // refresh
 		m.loading = true
 		return m, m.loadPlan()
+	case "?": // help overlay
+		m.showHelp = true
+		return m, nil
 	case ":":
 		m.mode = command
 		m.input.SetValue("")
@@ -280,6 +288,9 @@ func (m Model) updateCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "q", "quit":
 			m.quit = true
 			return m, tea.Quit
+		case "help", "h", "?":
+			m.showHelp = true
+			return m, nil
 		case "uncat", "review", "all":
 			m.scope = cmd
 			m.cursor = 0

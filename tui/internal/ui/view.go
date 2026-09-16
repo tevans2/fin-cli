@@ -52,6 +52,9 @@ func (m Model) View() string {
 	if m.w == 0 {
 		return "loading…"
 	}
+	if m.showHelp {
+		return strings.Join([]string{m.header(), m.renderHelp(), m.footer()}, "\n")
+	}
 	listW := m.w * 42 / 100
 	if listW < 26 {
 		listW = 26
@@ -169,6 +172,60 @@ func (m Model) renderFinder(w, h int) string {
 	return b.String()
 }
 
+// renderHelp draws the full-screen keybinding reference (toggled with ? or :help).
+func (m Model) renderHelp() string {
+	bodyH := m.h - 4
+	if bodyH < 3 {
+		bodyH = 3
+	}
+	k := func(s string) string { return styles.Key.Render(s) }
+
+	type row struct{ keys, desc string }
+	section := func(title string, rows []row) string {
+		var b strings.Builder
+		b.WriteString(styles.Title.Render(title) + "\n")
+		for _, r := range rows {
+			b.WriteString(fmt.Sprintf("  %-14s %s\n", k(r.keys), styles.Muted.Render(r.desc)))
+		}
+		return b.String()
+	}
+
+	nav := section("navigate", []row{
+		{"j / k", "move down / up"},
+		{"g / G", "jump to first / last"},
+		{"r", "refresh the list"},
+	})
+	actions := section("act on the focused transaction", []row{
+		{"enter", "accept the recommendation (confirm, in :review)"},
+		{"1 – 9", "pick a ranked candidate"},
+		{"c", "choose a category (fuzzy finder)"},
+		{"x", "reject → back to uncategorized"},
+		{"a", "auto-apply all confident matches"},
+	})
+	commands := section("commands  (press : then type)", []row{
+		{":uncat", "uncategorized inbox"},
+		{":review", "auto-classified, awaiting review"},
+		{":all", "every transaction"},
+		{":auto", "auto-apply confident matches"},
+		{":help", "show this help"},
+		{":q", "quit"},
+	})
+	finderHelp := section("category finder", []row{
+		{"type", "filter categories"},
+		{"ctrl-n / ctrl-p", "move down / up"},
+		{"enter", "apply the selected category"},
+		{"esc", "cancel"},
+	})
+
+	left := lipgloss.JoinVertical(lipgloss.Left, nav, "", actions)
+	right := lipgloss.JoinVertical(lipgloss.Left, commands, "", finderHelp)
+	cols := lipgloss.JoinHorizontal(lipgloss.Top, left, "    ", right)
+
+	dismiss := styles.Dim.Render("press ? or esc to close")
+	page := lipgloss.JoinVertical(lipgloss.Left, cols, "", dismiss)
+	return styles.Pane.Width(m.w - 2).Height(bodyH).Render(page)
+}
+
 func (m Model) footer() string {
 	if m.mode == command {
 		return styles.Key.Render(":") + m.input.View()
@@ -176,9 +233,9 @@ func (m Model) footer() string {
 	if m.mode == finder {
 		return styles.Help.Render("enter select · ctrl-n/p move · esc cancel")
 	}
-	help := "j/k move · enter accept · 1-9 pick · c category · x reject · a auto · : cmd · q quit"
+	help := "j/k move · enter accept · 1-9 pick · c category · x reject · a auto · ? help · q quit"
 	if m.scope == "review" {
-		help = "j/k move · y confirm · c correct · x reject · : cmd · q quit"
+		help = "j/k move · y confirm · c correct · x reject · ? help · q quit"
 	}
 	line := styles.Help.Render(help)
 	if m.msg != "" {
