@@ -200,6 +200,28 @@ def cmd_categories_check(_: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_merchants_list(args: argparse.Namespace) -> int:
+    from finance.classify.history import build_history
+    from finance.services.transactions import load_all_transactions
+
+    try:
+        model = build_history(load_all_transactions())
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    merchants = model.merchants()
+    if not merchants:
+        print("No categorized history yet — nothing learned.")
+        return 0
+    rows = merchants[: args.limit] if args.limit else merchants
+    print(f"{'merchant key':34}{'top category':36}{'conf':>6}{'n':>5}")
+    print("-" * 81)
+    for stats in rows:
+        print(f"{stats.key[:33]:34}{stats.top_category[:35]:36}{stats.confidence * 100:>5.0f}%{stats.samples:>5}")
+    print(f"\n{len(merchants)} merchants learned")
+    return 0
+
+
 def cmd_sync(args: argparse.Namespace) -> int:
     try:
         result = sync_bank(
@@ -622,6 +644,12 @@ def build_parser() -> argparse.ArgumentParser:
     categories_sub.add_parser(
         "check", help="Report categories used in transactions but not in the taxonomy"
     ).set_defaults(func=cmd_categories_check)
+
+    merchants = sub.add_parser("merchants", help="Inspect merchants learned from categorized history")
+    merchants_sub = merchants.add_subparsers(dest="merchants_command", required=True)
+    m_list = merchants_sub.add_parser("list", help="List learned merchants with their usual category")
+    m_list.add_argument("--limit", type=int, help="Show only the top N by sample count")
+    m_list.set_defaults(func=cmd_merchants_list)
 
     init_data = sub.add_parser("init-data", help="Initialize a new V2 data directory")
     init_data.add_argument("path", help="Target path for the separate finance data repo")
