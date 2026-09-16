@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
-
 
 VALID_STATUS = {"cleared", "pending"}
 
@@ -32,6 +31,7 @@ class TransactionRecord:
     imported_at: str
     payee: str | None = None
     alias: str | None = None
+    merchant: str | None = None
     notes: str | None = None
     tags: list[str] = field(default_factory=list)
     updated_at: str | None = None
@@ -87,7 +87,7 @@ class TransactionRecord:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "TransactionRecord":
+    def from_dict(cls, data: dict[str, Any]) -> TransactionRecord:
         raw = dict(data)
         raw["splits"] = [TransactionSplit(**s) for s in raw.pop("splits", None) or []]
         obj = cls(**raw)
@@ -96,4 +96,4 @@ class TransactionRecord:
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")

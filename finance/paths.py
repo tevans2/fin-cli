@@ -53,6 +53,14 @@ class DataPaths:
         return self.config_dir / "aliases.yaml"
 
     @property
+    def categories_config(self) -> Path:
+        return self.config_dir / "categories.yaml"
+
+    @property
+    def merchants_config(self) -> Path:
+        return self.config_dir / "merchants.yaml"
+
+    @property
     def accounts_config(self) -> Path:
         return self.config_dir / "accounts.journal"
 

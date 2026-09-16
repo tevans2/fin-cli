@@ -143,6 +143,63 @@ def cmd_config_edit(_: argparse.Namespace) -> int:
     return subprocess.call([*editor.split(), str(path)])
 
 
+def cmd_categories_list(_: argparse.Namespace) -> int:
+    from finance.classify.taxonomy import load_taxonomy
+
+    try:
+        taxonomy = load_taxonomy(get_data_paths().categories_config)
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    if not taxonomy.categories:
+        print("No categories.yaml yet. Run `fin categories seed` to create one from your data.")
+        return 0
+    for category in taxonomy.sorted():
+        print(category)
+    print(f"\n{len(taxonomy.categories)} categories")
+    return 0
+
+
+def cmd_categories_seed(_: argparse.Namespace) -> int:
+    from finance.classify.taxonomy import categories_in_use, load_taxonomy, write_taxonomy
+    from finance.services.transactions import load_all_transactions
+
+    try:
+        paths = get_data_paths()
+        existing = load_taxonomy(paths.categories_config).categories
+        used = categories_in_use(load_all_transactions())
+        merged = existing | used
+        write_taxonomy(paths.categories_config, merged)
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    print(f"Wrote {paths.categories_config}")
+    print(f"{len(merged)} categories ({len(merged) - len(existing)} new from your data, {len(existing)} already listed)")
+    return 0
+
+
+def cmd_categories_check(_: argparse.Namespace) -> int:
+    from finance.classify.taxonomy import load_taxonomy, unlisted_categories
+    from finance.services.transactions import load_all_transactions
+
+    try:
+        taxonomy = load_taxonomy(get_data_paths().categories_config)
+        if not taxonomy.enforced:
+            print("No categories.yaml yet. Run `fin categories seed` first.")
+            return 0
+        unlisted = unlisted_categories(load_all_transactions(), taxonomy)
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    if not unlisted:
+        print("OK — every category in use is listed in the taxonomy.")
+        return 0
+    print(f"{len(unlisted)} category(ies) used but not in categories.yaml (typo or new?):")
+    for category in sorted(unlisted):
+        print(f"  {category}")
+    return 1
+
+
 def cmd_sync(args: argparse.Namespace) -> int:
     try:
         result = sync_bank(
@@ -555,6 +612,16 @@ def build_parser() -> argparse.ArgumentParser:
     c_unset = config_sub.add_parser("unset", help="Remove a setting")
     c_unset.add_argument("key")
     c_unset.set_defaults(func=cmd_config_unset)
+
+    categories = sub.add_parser("categories", help="Manage the category taxonomy (config/categories.yaml)")
+    categories_sub = categories.add_subparsers(dest="categories_command", required=True)
+    categories_sub.add_parser("list", help="List taxonomy categories").set_defaults(func=cmd_categories_list)
+    categories_sub.add_parser(
+        "seed", help="Create/update the taxonomy from categories already in your data"
+    ).set_defaults(func=cmd_categories_seed)
+    categories_sub.add_parser(
+        "check", help="Report categories used in transactions but not in the taxonomy"
+    ).set_defaults(func=cmd_categories_check)
 
     init_data = sub.add_parser("init-data", help="Initialize a new V2 data directory")
     init_data.add_argument("path", help="Target path for the separate finance data repo")
