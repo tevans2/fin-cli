@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"strings"
 
 	"fin-tui/internal/api"
@@ -36,11 +37,23 @@ type Model struct {
 	split       splitState
 	splitAdding bool // the finder is picking a category for the split editor
 
+	undo []undoEntry
+	redo []undoEntry
+
 	w, h     int
 	msg      string
 	loading  bool
 	showHelp bool
 	quit     bool
+}
+
+// undoEntry is one reversible action: before/after are full record snapshots
+// (opaque JSON from the API); undo restores before, redo restores after.
+type undoEntry struct {
+	bank   string
+	before json.RawMessage
+	after  json.RawMessage
+	label  string
 }
 
 func New(c *api.Client) Model {
@@ -58,9 +71,10 @@ type plansMsg struct {
 type taxMsg struct{ cats []string }
 type statusMsg struct{ s api.Status }
 type doneMsg struct {
-	err     error
-	reload  bool
-	message string
+	err      error
+	reload   bool
+	taxonomy bool
+	message  string
 }
 
 // ── commands ─────────────────────────────────────────────────────────────────
@@ -83,6 +97,46 @@ func (m Model) loadStatus() tea.Cmd {
 
 func act(err error, msg string) tea.Cmd {
 	return func() tea.Msg { return doneMsg{err: err, reload: false, message: msg} }
+}
+
+// mutate records an undo checkpoint for a just-applied change (unless it failed)
+// and reports the outcome. Client calls are synchronous, so res is already in hand.
+func (m *Model) mutate(bank string, res *api.MutationResult, err error, label string) tea.Cmd {
+	if err == nil && res != nil && len(res.Before) > 0 {
+		m.undo = append(m.undo, undoEntry{bank: bank, before: res.Before, after: res.After, label: label})
+		m.redo = m.redo[:0] // a fresh action invalidates the redo branch
+	}
+	return act(err, label)
+}
+
+func (m Model) undoLast() (tea.Model, tea.Cmd) {
+	if len(m.undo) == 0 {
+		m.msg = "nothing to undo"
+		return m, nil
+	}
+	e := m.undo[len(m.undo)-1]
+	m.undo = m.undo[:len(m.undo)-1]
+	m.redo = append(m.redo, e)
+	m.loading = true
+	c := m.client
+	return m, func() tea.Msg {
+		return doneMsg{err: c.Restore(e.bank, e.before), reload: true, message: "undo: " + e.label}
+	}
+}
+
+func (m Model) redoLast() (tea.Model, tea.Cmd) {
+	if len(m.redo) == 0 {
+		m.msg = "nothing to redo"
+		return m, nil
+	}
+	e := m.redo[len(m.redo)-1]
+	m.redo = m.redo[:len(m.redo)-1]
+	m.undo = append(m.undo, e)
+	m.loading = true
+	c := m.client
+	return m, func() tea.Msg {
+		return doneMsg{err: c.Restore(e.bank, e.after), reload: true, message: "redo: " + e.label}
+	}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -156,6 +210,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.reload {
 			cmds = append(cmds, m.loadPlan())
 		}
+		if msg.taxonomy {
+			cmds = append(cmds, m.loadTax())
+		}
 		return m, tea.Batch(cmds...)
 	case tea.KeyMsg:
 		if m.showHelp { // help is a modal overlay: any key dismisses it
@@ -196,10 +253,15 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "G", "end":
 		m.cursor = len(m.items) - 1
 	case "a": // auto-apply confident across all banks
+		m.undo, m.redo = nil, nil // bulk change: the per-item undo history no longer holds
 		return m, func() tea.Msg {
 			err := m.client.Auto()
 			return doneMsg{err: err, reload: true, message: "auto-applied confident matches"}
 		}
+	case "u": // undo the last action
+		return m.undoLast()
+	case "ctrl+r": // redo
+		return m.redoLast()
 	case "r": // refresh
 		m.loading = true
 		return m, m.loadPlan()
@@ -226,20 +288,23 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "x", "d": // reject -> uncategorized
 		if ok {
+			res, err := m.client.Reject(it.Record.Institution, it.Record.ID)
 			m.removeCurrent()
-			return m, act(m.client.Reject(it.Record.Institution, it.Record.ID), "rejected")
+			return m, m.mutate(it.Record.Institution, res, err, "reject")
 		}
 	case "y", "enter": // accept recommendation (uncat) or confirm (review)
 		if !ok {
 			return m, nil
 		}
 		if m.scope == "review" {
+			res, err := m.client.Confirm(it.Record.Institution, []string{it.Record.ID})
 			m.removeCurrent()
-			return m, act(m.client.Confirm(it.Record.Institution, []string{it.Record.ID}), "confirmed")
+			return m, m.mutate(it.Record.Institution, res, err, "confirm")
 		}
 		if rec := it.Classification.Recommended; rec != nil {
+			res, err := m.client.ApplyCategory(it.Record.Institution, it.Record.ID, *rec)
 			m.removeCurrent()
-			return m, act(m.client.ApplyCategory(it.Record.Institution, it.Record.ID, *rec), "accepted "+*rec)
+			return m, m.mutate(it.Record.Institution, res, err, "accept "+*rec)
 		}
 		m.msg = "no recommendation — press c to choose"
 	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
@@ -247,8 +312,9 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			n := int(msg.String()[0] - '1')
 			if n < len(it.Classification.Candidates) {
 				cat := it.Classification.Candidates[n].Category
+				res, err := m.client.ApplyCategory(it.Record.Institution, it.Record.ID, cat)
 				m.removeCurrent()
-				return m, act(m.client.ApplyCategory(it.Record.Institution, it.Record.ID, cat), "set "+cat)
+				return m, m.mutate(it.Record.Institution, res, err, "set "+cat)
 			}
 		}
 	}
@@ -266,12 +332,12 @@ func (m Model) updateFinder(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case "ctrl+n", "down":
+	case "ctrl+n", "ctrl+j", "down":
 		if m.fcursor < len(m.filtered)-1 {
 			m.fcursor++
 		}
 		return m, nil
-	case "ctrl+p", "up":
+	case "ctrl+p", "ctrl+k", "up":
 		if m.fcursor > 0 {
 			m.fcursor--
 		}
@@ -291,8 +357,9 @@ func (m Model) updateFinder(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if ok && m.fcursor < len(m.filtered) {
 			cat := m.filtered[m.fcursor]
 			m.mode = normal
+			res, err := m.client.ApplyCategory(it.Record.Institution, it.Record.ID, cat)
 			m.removeCurrent()
-			return m, act(m.client.ApplyCategory(it.Record.Institution, it.Record.ID, cat), "set "+cat)
+			return m, m.mutate(it.Record.Institution, res, err, "set "+cat)
 		}
 		m.mode = normal
 		return m, nil
@@ -309,9 +376,13 @@ func (m Model) updateCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = normal
 		return m, nil
 	case "enter":
-		cmd := strings.TrimSpace(m.input.Value())
+		raw := strings.TrimSpace(m.input.Value())
 		m.mode = normal
-		switch cmd {
+		fields := strings.Fields(raw)
+		if len(fields) == 0 {
+			return m, nil
+		}
+		switch fields[0] {
 		case "q", "quit":
 			m.quit = true
 			return m, tea.Quit
@@ -319,21 +390,57 @@ func (m Model) updateCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.showHelp = true
 			return m, nil
 		case "uncat", "review", "all":
-			m.scope = cmd
+			m.scope = fields[0]
 			m.cursor = 0
 			m.loading = true
 			return m, m.loadPlan()
 		case "auto":
+			m.undo, m.redo = nil, nil
 			return m, func() tea.Msg {
 				err := m.client.Auto()
 				return doneMsg{err: err, reload: true, message: "auto-applied"}
 			}
+		case "cat":
+			return m.categoryCommand(fields[1:])
 		default:
-			m.msg = "unknown command: " + cmd
+			m.msg = "unknown command: " + raw
 			return m, nil
 		}
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
+}
+
+// categoryCommand handles ":cat add <name>" and ":cat rename <old> <new>".
+func (m Model) categoryCommand(args []string) (tea.Model, tea.Cmd) {
+	if len(args) == 0 {
+		m.msg = "usage: :cat add <name>  |  :cat rename <old> <new>"
+		return m, nil
+	}
+	switch args[0] {
+	case "add":
+		if len(args) != 2 {
+			m.msg = "usage: :cat add <category>"
+			return m, nil
+		}
+		name := args[1]
+		return m, func() tea.Msg {
+			return doneMsg{err: m.client.AddCategory(name), taxonomy: true, message: "added " + name}
+		}
+	case "rename":
+		if len(args) != 3 {
+			m.msg = "usage: :cat rename <old> <new>"
+			return m, nil
+		}
+		old, name := args[1], args[2]
+		m.undo, m.redo = nil, nil // records change under us; drop stale undo history
+		return m, func() tea.Msg {
+			return doneMsg{err: m.client.RenameCategory(old, name), reload: true, taxonomy: true,
+				message: "renamed " + old + " → " + name}
+		}
+	default:
+		m.msg = "unknown: :cat " + args[0]
+		return m, nil
+	}
 }

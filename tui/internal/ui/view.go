@@ -197,6 +197,8 @@ func (m Model) renderHelp() string {
 	nav := section("navigate", []row{
 		{"j / k", "move down / up"},
 		{"g / G", "jump to first / last"},
+		{"u", "undo the last action"},
+		{"ctrl-r", "redo"},
 		{"r", "refresh the list"},
 	})
 	actions := section("act on the focused transaction", []row{
@@ -212,12 +214,14 @@ func (m Model) renderHelp() string {
 		{":review", "auto-classified, awaiting review"},
 		{":all", "every transaction"},
 		{":auto", "auto-apply confident matches"},
+		{":cat add <name>", "add a category"},
+		{":cat rename <a> <b>", "rename a category"},
 		{":help", "show this help"},
 		{":q", "quit"},
 	})
 	finderHelp := section("category finder", []row{
 		{"type", "filter categories"},
-		{"ctrl-n / ctrl-p", "move down / up"},
+		{"ctrl-j / ctrl-k", "move down / up"},
 		{"enter", "apply the selected category"},
 		{"esc", "cancel"},
 	})
@@ -326,14 +330,14 @@ func (m Model) footer() string {
 		return styles.Key.Render(":") + m.input.View()
 	}
 	if m.mode == finder {
-		return styles.Help.Render("enter select · ctrl-n/p move · esc cancel")
+		return styles.Help.Render("enter select · ctrl-j/k move · esc cancel")
 	}
 	if m.split.active {
 		return styles.Help.Render(m.splitHelp())
 	}
-	help := "j/k move · enter accept · 1-9 pick · c category · s split · x reject · a auto · ? help · q quit"
+	help := "j/k move · enter accept · 1-9 pick · c cat · s split · x reject · a auto · u undo · ? help · q quit"
 	if m.scope == "review" {
-		help = "j/k move · y confirm · c correct · s split · x reject · ? help · q quit"
+		help = "j/k move · y confirm · c correct · s split · x reject · u undo · ? help · q quit"
 	}
 	line := styles.Help.Render(help)
 	if m.msg != "" {

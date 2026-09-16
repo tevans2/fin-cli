@@ -333,6 +333,7 @@ func (m Model) saveSplit() (tea.Model, tea.Cmd) {
 	}
 	bank, id, merchant := s.rec.Institution, s.rec.ID, s.merchant
 	s.active = false
+	res, err := m.client.ApplySplits(bank, id, splits, merchant)
 	m.removeCurrent()
-	return m, act(m.client.ApplySplits(bank, id, splits, merchant), "split applied")
+	return m, m.mutate(bank, res, err, "split")
 }
