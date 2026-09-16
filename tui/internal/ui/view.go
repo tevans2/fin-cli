@@ -66,12 +66,16 @@ func (m Model) View() string {
 	}
 
 	left := styles.Pane.Width(listW).Height(bodyH).Render(m.renderList(listW-2, bodyH))
-	var right string
-	if m.mode == finder {
-		right = styles.Pane.Width(detailW).Height(bodyH).Render(m.renderFinder(detailW-2, bodyH))
-	} else {
-		right = styles.Pane.Width(detailW).Height(bodyH).Render(m.renderDetail(detailW-2, bodyH))
+	var rightBody string
+	switch {
+	case m.mode == finder:
+		rightBody = m.renderFinder(detailW-2, bodyH)
+	case m.split.active:
+		rightBody = m.renderSplit(detailW-2, bodyH)
+	default:
+		rightBody = m.renderDetail(detailW-2, bodyH)
 	}
+	right := styles.Pane.Width(detailW).Height(bodyH).Render(rightBody)
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
 
 	return strings.Join([]string{m.header(), body, m.footer()}, "\n")
@@ -199,6 +203,7 @@ func (m Model) renderHelp() string {
 		{"enter", "accept the recommendation (confirm, in :review)"},
 		{"1 – 9", "pick a ranked candidate"},
 		{"c", "choose a category (fuzzy finder)"},
+		{"s", "split across categories (amount or %)"},
 		{"x", "reject → back to uncategorized"},
 		{"a", "auto-apply all confident matches"},
 	})
@@ -216,14 +221,104 @@ func (m Model) renderHelp() string {
 		{"enter", "apply the selected category"},
 		{"esc", "cancel"},
 	})
+	splitHelp := section("split editor  (s)", []row{
+		{"c", "add a category slot"},
+		{"i", "type an exact amount (rest auto-fills)"},
+		{"h / l", "proportion ∓/± 5%"},
+		{"tab", "toggle amount / proportion"},
+		{"x", "remove slot   ·   enter apply   ·   esc cancel"},
+	})
 
-	left := lipgloss.JoinVertical(lipgloss.Left, nav, "", actions)
+	left := lipgloss.JoinVertical(lipgloss.Left, nav, "", actions, "", splitHelp)
 	right := lipgloss.JoinVertical(lipgloss.Left, commands, "", finderHelp)
 	cols := lipgloss.JoinHorizontal(lipgloss.Top, left, "    ", right)
 
 	dismiss := styles.Dim.Render("press ? or esc to close")
 	page := lipgloss.JoinVertical(lipgloss.Left, cols, "", dismiss)
 	return styles.Pane.Width(m.w - 2).Height(bodyH).Render(page)
+}
+
+func (m Model) splitHelp() string {
+	if m.split.editing {
+		return "type amount · enter set · esc cancel"
+	}
+	if m.split.kind == splitProp {
+		return "j/k move · h/l ±5% · c add · x remove · tab exact · enter apply · esc cancel"
+	}
+	return "j/k move · i amount · c add · x remove · tab % · enter apply · esc cancel"
+}
+
+func (m Model) renderSplit(w, h int) string {
+	s := m.split
+	kind := "exact"
+	if s.kind == splitProp {
+		kind = "proportion"
+	}
+	var b strings.Builder
+	src := "?"
+	if s.merchant != nil && *s.merchant != "" {
+		src = *s.merchant
+	}
+	b.WriteString(styles.Title.Render("split "+fmtCents(s.total)) + "  " +
+		styles.Key.Render("["+kind+"]") + "  " + styles.Dim.Render(src) + "\n\n")
+
+	if len(s.allocs) == 0 {
+		b.WriteString(styles.Muted.Render("press c to add a category") + "\n")
+		return b.String()
+	}
+
+	var cents []int64
+	var pcts []int
+	if s.kind == splitProp {
+		cents = s.propCents()
+		pcts = s.propPcts()
+	} else {
+		cents = make([]int64, len(s.allocs))
+		for i := range s.allocs {
+			cents[i] = s.allocs[i].cents
+		}
+	}
+
+	var sum int64
+	catW := w - 24
+	if catW < 8 {
+		catW = 8
+	}
+	for i, a := range s.allocs {
+		sum += cents[i]
+		tag := ""
+		if s.kind == splitExact && !a.locked {
+			tag = styles.Dim.Render(" auto")
+		}
+		if s.kind == splitProp && i == len(s.allocs)-1 {
+			tag = styles.Dim.Render(" bal")
+		}
+		mid := ""
+		if s.kind == splitProp {
+			mid = styles.Key.Render(fmt.Sprintf("%3d%% ", pcts[i]))
+		}
+		line := fmt.Sprintf("%-*s %s%9s%s", catW, trunc(a.category, catW), mid, fmtCents(cents[i]), tag)
+		if i == s.cursor {
+			b.WriteString(styles.Sel.Width(w).Render("› "+line) + "\n")
+		} else {
+			b.WriteString("  " + line + "\n")
+		}
+	}
+
+	b.WriteString("\n")
+	if s.editing {
+		b.WriteString(styles.Muted.Render("amount ▸ ") + m.input.View() + "\n")
+	}
+	rem := s.total - sum
+	switch {
+	case len(s.allocs) < 2:
+		b.WriteString(styles.Muted.Render("add another category to split"))
+	case rem == 0:
+		b.WriteString(styles.Ok.Render("balanced ✓  enter to apply"))
+	default:
+		b.WriteString(styles.Warn.Render("remaining " + fmtCents(rem)))
+	}
+	return b.String()
 }
 
 func (m Model) footer() string {
@@ -233,9 +328,12 @@ func (m Model) footer() string {
 	if m.mode == finder {
 		return styles.Help.Render("enter select · ctrl-n/p move · esc cancel")
 	}
-	help := "j/k move · enter accept · 1-9 pick · c category · x reject · a auto · ? help · q quit"
+	if m.split.active {
+		return styles.Help.Render(m.splitHelp())
+	}
+	help := "j/k move · enter accept · 1-9 pick · c category · s split · x reject · a auto · ? help · q quit"
 	if m.scope == "review" {
-		help = "j/k move · y confirm · c correct · x reject · ? help · q quit"
+		help = "j/k move · y confirm · c correct · s split · x reject · ? help · q quit"
 	}
 	line := styles.Help.Render(help)
 	if m.msg != "" {

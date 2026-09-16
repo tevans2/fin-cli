@@ -33,6 +33,9 @@ type Model struct {
 	filtered []string
 	fcursor  int
 
+	split       splitState
+	splitAdding bool // the finder is picking a category for the split editor
+
 	w, h     int
 	msg      string
 	loading  bool
@@ -165,6 +168,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case command:
 			return m.updateCommand(msg)
 		default:
+			if m.split.active {
+				return m.updateSplit(msg)
+			}
 			return m.updateNormal(msg)
 		}
 	}
@@ -199,6 +205,11 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.loadPlan()
 	case "?": // help overlay
 		m.showHelp = true
+		return m, nil
+	case "s": // split the focused transaction across categories
+		if ok {
+			m.startSplit(it)
+		}
 		return m, nil
 	case ":":
 		m.mode = command
@@ -248,6 +259,12 @@ func (m Model) updateFinder(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.mode = normal
+		if m.splitAdding { // cancel the add; drop the editor if it's still empty
+			m.splitAdding = false
+			if len(m.split.allocs) == 0 {
+				m.split.active = false
+			}
+		}
 		return m, nil
 	case "ctrl+n", "down":
 		if m.fcursor < len(m.filtered)-1 {
@@ -260,6 +277,16 @@ func (m Model) updateFinder(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "enter":
+		if m.splitAdding { // add the chosen category as a new split slot
+			m.mode = normal
+			m.splitAdding = false
+			if m.fcursor < len(m.filtered) {
+				m.split.allocs = append(m.split.allocs, splitAlloc{category: m.filtered[m.fcursor]})
+				m.split.cursor = len(m.split.allocs) - 1
+				m.split.recomputeExact()
+			}
+			return m, nil
+		}
 		it, ok := m.current()
 		if ok && m.fcursor < len(m.filtered) {
 			cat := m.filtered[m.fcursor]

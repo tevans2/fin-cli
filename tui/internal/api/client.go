@@ -140,6 +140,20 @@ func (c *Client) ApplyCategory(bank, id, category string) error {
 	return c.do("POST", "/categorize/apply", map[string]any{"bank": bank, "id": id, "category": category}, nil)
 }
 
+// Split is one allocation of a transaction to a category (positive magnitude).
+type Split struct {
+	Account string `json:"account"`
+	Amount  string `json:"amount"`
+}
+
+func (c *Client) ApplySplits(bank, id string, splits []Split, merchant *string) error {
+	body := map[string]any{"bank": bank, "id": id, "splits": splits}
+	if merchant != nil {
+		body["merchant"] = *merchant
+	}
+	return c.do("POST", "/categorize/apply", body, nil)
+}
+
 func (c *Client) Confirm(bank string, ids []string) error {
 	return c.do("POST", "/categorize/confirm", map[string]any{"bank": bank, "ids": ids}, nil)
 }
