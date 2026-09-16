@@ -31,7 +31,7 @@ class ApplyBody(BaseModel):
 
 
 class AutoBody(BaseModel):
-    bank: str
+    bank: str | None = None
 
 
 class ConfirmBody(BaseModel):
@@ -102,6 +102,14 @@ def create_app() -> FastAPI:
     def mark_dirty() -> None:
         app.state.dirty = True
 
+    def all_banks() -> list[str]:
+        from finance.config import load_app_config
+
+        txn_dir = load_app_config().paths.transactions_dir
+        if not txn_dir.exists():
+            return []
+        return sorted(d.name for d in txn_dir.iterdir() if d.is_dir() and not d.name.startswith("."))
+
     def auth(authorization: str | None = Header(default=None)) -> None:
         token = os.getenv("FIN_API_TOKEN")
         if not token:
@@ -138,21 +146,29 @@ def create_app() -> FastAPI:
 
     # ── classification (priority) ─────────────────────────────────────────────
     @app.get("/categorize/plan", dependencies=guard)
-    def plan(bank: str, scope: str = "uncat") -> list[dict]:
+    def plan(bank: str | None = None, scope: str = "uncat") -> list[dict]:
         from finance.services.categorize import build_plan
 
         c = classifier()
-        return [_plan_item(r, cl) for r, cl in build_plan(bank, scope=scope, history=c.history, rules=c.rules)]
+        items: list[dict] = []
+        for b in ([bank] if bank else all_banks()):
+            items += [_plan_item(r, cl) for r, cl in build_plan(b, scope=scope, history=c.history, rules=c.rules)]
+        items.sort(key=lambda i: (i["record"]["date"], i["record"]["id"]), reverse=True)
+        return items
 
     @app.post("/categorize/auto", dependencies=guard)
-    def auto(body: AutoBody) -> dict:
+    def auto(body: AutoBody | None = None) -> dict:
         from finance.services.categorize import auto_apply
 
         with _write_lock:
             c = classifier()
-            result = auto_apply(body.bank, history=c.history, rules=c.rules)
+            banks = [body.bank] if body and body.bank else all_banks()
+            results = [auto_apply(b, history=c.history, rules=c.rules) for b in banks]
             mark_dirty()
-        return result
+        return {
+            "auto_applied": sum(r["auto_applied"] for r in results),
+            "needs_review": sum(r["needs_review"] for r in results),
+        }
 
     @app.post("/categorize/apply", dependencies=guard)
     def apply(body: ApplyBody) -> dict:

@@ -621,6 +621,75 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _free_port() -> int:
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _wait_healthy(url: str, timeout: float = 8.0) -> bool:
+    import time
+    import urllib.request
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(url + "/health", timeout=0.5)
+            return True
+        except Exception:
+            time.sleep(0.1)
+    return False
+
+
+def cmd_tui(_: argparse.Namespace) -> int:
+    import json
+    import os
+    import secrets
+    import shutil
+    import subprocess
+    import sys
+    import urllib.request
+
+    binary = shutil.which("fin-tui") or os.path.expanduser("~/.local/bin/fin-tui")
+    if not os.path.exists(binary):
+        print("ERROR: fin-tui not found. Build it with `make tui` (or `make install`).")
+        return 1
+
+    # reuse a healthy running API, else spawn an ephemeral one
+    runtime = settings.config_dir() / "runtime.json"
+    url = token = None
+    proc = None
+    if runtime.exists():
+        try:
+            rt = json.loads(runtime.read_text())
+            urllib.request.urlopen(rt["url"] + "/health", timeout=1)
+            url, token = rt["url"], rt["token"]
+        except Exception:
+            pass
+    if url is None:
+        token = secrets.token_urlsafe(24)
+        url = f"http://127.0.0.1:{_free_port()}"
+        env = {**os.environ, "FIN_API_TOKEN": token}
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "finance.api.app:app",
+             "--host", "127.0.0.1", "--port", url.rsplit(":", 1)[1]],
+            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        if not _wait_healthy(url):
+            proc.terminate()
+            print("ERROR: could not start the API")
+            return 1
+
+    try:
+        subprocess.run([binary], env={**os.environ, "FIN_API_URL": url, "FIN_API_TOKEN": token or ""})
+    finally:
+        if proc:
+            proc.terminate()
+    return 0
+
+
 def cmd_verify(_: argparse.Namespace) -> int:
     try:
         results = verify_accounts()
@@ -1110,6 +1179,9 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=8765)
     serve.add_argument("--reload", action="store_true", help="Auto-reload on code changes (dev)")
     serve.set_defaults(func=cmd_serve)
+
+    tui = sub.add_parser("tui", help="Launch the terminal UI (auto-starts the API)")
+    tui.set_defaults(func=cmd_tui)
 
     analyze = sub.add_parser("analyze", help="Analyze spending: recurring, cashflow, trends")
     analyze_sub = analyze.add_subparsers(dest="analyze_command", required=True)

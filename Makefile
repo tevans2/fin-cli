@@ -5,7 +5,7 @@ BANK    := investec
 ACCOUNT := checking
 MONTH   := this month
 
-.PHONY: install dev sync categorize rules-apply verify \
+.PHONY: install dev tui sync categorize rules-apply verify \
         bs is expenses unknowns review \
         spend-month spend-trend top-spend monthly \
         net-worth net-income \
@@ -18,11 +18,16 @@ help: ## Show this help
 
 # ── setup ─────────────────────────────────────────────────────────────────────
 
-install:     ## Install the `fin` CLI on your PATH (uv tool, editable, with AI extra)
-	uv tool install --editable '.[ai]'
+install:     ## Install the `fin` CLI + API on your PATH and build the TUI
+	uv tool install --force --editable '.[ai,api]'
+	$(MAKE) tui
+
+tui:         ## Build the Go/Bubble Tea TUI to ~/.local/bin/fin-tui
+	cd tui && go build -o $(HOME)/.local/bin/fin-tui ./cmd/fin-tui
+	@echo "built ~/.local/bin/fin-tui"
 
 dev:         ## Sync the project venv for development (tests, linting)
-	uv sync --extra dev --extra ai
+	uv sync --extra dev --extra ai --extra api
 
 # ── data ─────────────────────────────────────────────────────────────────────
 
