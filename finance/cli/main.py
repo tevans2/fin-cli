@@ -366,6 +366,16 @@ def cmd_categorize(args: argparse.Namespace) -> int:
     taxonomy = load_taxonomy(get_data_paths().categories_config)
     reviewed = 0
     for index, (record, c) in enumerate(plan, 1):
+        if args.ai and not c.recommended:
+            from finance.classify.llm import LLMError, suggest_category
+
+            try:
+                ai_category = suggest_category(record.description, record.amount, record.currency, taxonomy.sorted())
+                if ai_category:
+                    c.recommended, c.source, c.confidence = ai_category, "llm", 0.0
+            except LLMError as exc:
+                print(f"    (AI unavailable: {exc})")
+                args.ai = False   # stop retrying every row once it's clearly not set up
         print()
         print(f"[{index}/{len(plan)}]  {record.date}  {record.amount:>11} {record.currency}   merchant={c.merchant or '?'}")
         print(f"    {record.description[:72]}")
@@ -402,7 +412,8 @@ def cmd_categorize(args: argparse.Namespace) -> int:
             print("    unrecognized")
             continue
 
-        apply_category(args.bank, record.id, chosen, source="manual", merchant=c.merchant)
+        source = "llm" if (action == "" and c.source == "llm") else "manual"
+        apply_category(args.bank, record.id, chosen, source=source, merchant=c.merchant)
         reviewed += 1
 
         # offer to pin a rule — but only for merchants that aren't historically ambiguous
@@ -930,6 +941,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     categorize.add_argument("bank", help="Bank/provider name, eg investec")
     categorize.add_argument("--auto", action="store_true", help="Only auto-apply confident matches; no prompts")
+    categorize.add_argument(
+        "--ai", action="store_true",
+        help="For unknown merchants, ask OpenAI to propose a category from your taxonomy (needs OPENAI_API_KEY)",
+    )
     categorize.add_argument("--dry-run", action="store_true", help="Show what would happen; change nothing")
     categorize.add_argument("--limit", type=int, help="With --dry-run, cap the rows shown")
     categorize.set_defaults(func=cmd_categorize)
