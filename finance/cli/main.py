@@ -210,15 +210,59 @@ def cmd_merchants_list(args: argparse.Namespace) -> int:
         print(f"ERROR: {exc}")
         return 1
     merchants = model.merchants()
+    if args.conflicted:
+        merchants = [m for m in merchants if m.conflicted]
+    if args.min_samples:
+        merchants = [m for m in merchants if m.samples >= args.min_samples]
+    if args.sort == "conf":
+        merchants.sort(key=lambda s: (s.confidence, -s.samples))   # least confident first, to review
+    elif args.sort == "name":
+        merchants.sort(key=lambda s: s.key)
     if not merchants:
-        print("No categorized history yet — nothing learned.")
+        print("No merchants match.")
         return 0
     rows = merchants[: args.limit] if args.limit else merchants
-    print(f"{'merchant key':34}{'top category':36}{'conf':>6}{'n':>5}")
-    print("-" * 81)
+    print(f"{'merchant key':34}{'top category':32}{'conf':>6}{'n':>5}{'cats':>6}")
+    print("-" * 83)
     for stats in rows:
-        print(f"{stats.key[:33]:34}{stats.top_category[:35]:36}{stats.confidence * 100:>5.0f}%{stats.samples:>5}")
-    print(f"\n{len(merchants)} merchants learned")
+        print(
+            f"{stats.key[:33]:34}{stats.top_category[:31]:32}"
+            f"{stats.confidence * 100:>5.0f}%{stats.samples:>5}{len(stats.category_counts):>6}"
+        )
+    print(f"\n{len(merchants)} merchants  ·  verify one with `fin merchants show <key>`")
+    return 0
+
+
+def cmd_merchants_show(args: argparse.Namespace) -> int:
+    import difflib
+
+    from finance.classify.history import build_history, matching_records
+    from finance.services.transactions import load_all_transactions
+
+    try:
+        transactions = load_all_transactions()
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        return 1
+    model = build_history(transactions)
+    stats = model.by_key.get(args.key)
+    if stats is None:
+        print(f"No learned merchant with key '{args.key}'.")
+        near = difflib.get_close_matches(args.key, list(model.by_key), n=5, cutoff=0.5)
+        if near:
+            print("Close keys: " + ", ".join(near))
+        return 1
+
+    print(f"Merchant: {stats.display_name}    key='{stats.key}'    samples={stats.samples}")
+    print("Category breakdown:")
+    for category, count, share in stats.breakdown():
+        print(f"  {share * 100:>5.0f}%  {count:>4}  {category}")
+
+    matches = matching_records(transactions, args.key)
+    shown = sorted(matches, key=lambda r: r.date)[: args.examples]
+    print(f"\nExample transactions ({len(shown)} of {len(matches)}):")
+    for record in shown:
+        print(f"  {record.date}  {record.amount:>11} {record.currency}  {record.category:<26}  {record.description[:48]}")
     return 0
 
 
@@ -648,8 +692,18 @@ def build_parser() -> argparse.ArgumentParser:
     merchants = sub.add_parser("merchants", help="Inspect merchants learned from categorized history")
     merchants_sub = merchants.add_subparsers(dest="merchants_command", required=True)
     m_list = merchants_sub.add_parser("list", help="List learned merchants with their usual category")
-    m_list.add_argument("--limit", type=int, help="Show only the top N by sample count")
+    m_list.add_argument("--limit", type=int, help="Show only the top N")
+    m_list.add_argument(
+        "--sort", choices=["samples", "conf", "name"], default="samples",
+        help="Sort order (conf = least confident first, for review)",
+    )
+    m_list.add_argument("--conflicted", action="store_true", help="Only merchants seen in more than one category")
+    m_list.add_argument("--min-samples", type=int, help="Only merchants with at least N samples")
     m_list.set_defaults(func=cmd_merchants_list)
+    m_show = merchants_sub.add_parser("show", help="Show a merchant's category breakdown + example transactions")
+    m_show.add_argument("key", help="Merchant key (from `fin merchants list`)")
+    m_show.add_argument("--examples", type=int, default=12, help="How many example transactions to show")
+    m_show.set_defaults(func=cmd_merchants_show)
 
     init_data = sub.add_parser("init-data", help="Initialize a new V2 data directory")
     init_data.add_argument("path", help="Target path for the separate finance data repo")

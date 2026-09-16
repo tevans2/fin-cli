@@ -81,3 +81,34 @@ def test_display_name_prefers_alias_then_titlecase():
 
 def test_no_suggestion_for_unseen():
     assert build_history([]).suggest("whatever") is None
+
+
+def test_conflicted_and_breakdown():
+    records = [
+        _rec("Woolworths", "expenses:groceries"),
+        _rec("Woolworths", "expenses:groceries"),
+        _rec("Woolworths", "expenses:shopping:clothing"),
+    ]
+    stats = build_history(records).by_key["woolworths"]
+    assert stats.conflicted
+    breakdown = stats.breakdown()
+    assert breakdown[0] == ("expenses:groceries", 2, 0.6667)
+    assert breakdown[1][0] == "expenses:shopping:clothing"
+
+
+def test_not_conflicted_when_single_category():
+    stats = build_history([_rec("Bohemia", "expenses:lifestyle:drinks")]).by_key["bohemia"]
+    assert not stats.conflicted
+
+
+def test_matching_records_groups_by_normalized_key():
+    from finance.classify.history import matching_records
+
+    records = [
+        _rec("Purchase at Yoco *Pizza Shed Cape Town ZA 622716900111", "expenses:lifestyle:eating-out"),
+        _rec("YOCO *PIZZA SHED CAPE TOWN ZA", "expenses:lifestyle:eating-out"),
+        _rec("Woolworths", "expenses:groceries"),
+    ]
+    matched = matching_records(records, "pizza shed")
+    assert len(matched) == 2
+    assert all("PIZZA SHED" in r.description.upper() for r in matched)

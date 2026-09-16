@@ -54,6 +54,19 @@ class MerchantStats:
             return self.name_counts.most_common(1)[0][0]
         return self.key.title()
 
+    @property
+    def conflicted(self) -> bool:
+        """More than one category has ever been used for this merchant."""
+        return len(self.category_counts) > 1
+
+    def breakdown(self) -> list[tuple[str, int, float]]:
+        """(category, count, share) for every category seen, most common first."""
+        total = self.samples
+        return [
+            (category, count, round(count / total, 4) if total else 0.0)
+            for category, count in self.category_counts.most_common()
+        ]
+
 
 @dataclass
 class Suggestion:
@@ -100,6 +113,11 @@ class HistoryModel:
 
     def suggest_for(self, record: TransactionRecord, *, allow_fuzzy: bool = True) -> Suggestion | None:
         return self.suggest(merchant_key(record.description), allow_fuzzy=allow_fuzzy)
+
+
+def matching_records(records: list[TransactionRecord], key: str) -> list[TransactionRecord]:
+    """Every transaction whose description normalizes to ``key`` (for verification)."""
+    return [r for r in records if merchant_key(r.description) == key]
 
 
 def build_history(records: list[TransactionRecord]) -> HistoryModel:

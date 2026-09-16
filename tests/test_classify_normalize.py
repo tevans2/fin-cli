@@ -17,6 +17,7 @@ CASES = [
     ("EFT for ABSA BANK Chanel Ritz Sept3", "absa bank chanel ritz"),
     ("Purchase at AANDKLAS STELLENBOSCH Stellenbosch ZA 623820584472", "aandklas"),
     ("Purchase at TOPS OAKHURST Western Cape ZA 624915125816", "tops oakhurst"),
+    ("Purchase at KAPSTADT BRAUHAUS125211 Cape Town ZA", "kapstadt brauhaus"),  # ref glued to word
 ]
 
 

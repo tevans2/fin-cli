@@ -65,7 +65,7 @@ _MONTHS = "jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec"
 # Noise patterns removed anywhere in the string.
 NOISE_PATTERNS: list[re.Pattern] = [
     re.compile(r"\+?\d[\d ]{6,}\d"),                       # phone numbers
-    re.compile(r"\b\d{5,}\b"),                             # long ref/auth numbers
+    re.compile(r"\d{5,}"),                                 # long ref/auth numbers (even glued to a word)
     re.compile(r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b"),      # dates like 27/08
     re.compile(rf"\b(?:{_MONTHS})[a-z]*\d*\b"),           # month fragments: aug, sept3
     re.compile(r"\b(za|us|gb|usd|eur|zar|uk)\b"),         # country/currency codes
