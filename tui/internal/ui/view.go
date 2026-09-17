@@ -58,6 +58,9 @@ func (m Model) View() string {
 	if m.showMerchant {
 		return strings.Join([]string{m.header(), m.renderMerchant(), m.footer()}, "\n")
 	}
+	if m.ingest.active {
+		return strings.Join([]string{m.header(), m.renderIngest(), m.footer()}, "\n")
+	}
 	listW := m.w * 42 / 100
 	if listW < 26 {
 		listW = 26
@@ -217,6 +220,7 @@ func (m Model) renderHelp() string {
 		{":uncat", "uncategorized inbox"},
 		{":review", "auto-classified (j confirms + advances)"},
 		{":all", "every transaction"},
+		{":import", "ingest a bank (sync or import a file)"},
 		{":auto", "auto-apply confident matches"},
 		{":cat add <name>", "add a category"},
 		{":cat rename <a> <b>", "rename a category"},
@@ -280,6 +284,96 @@ func (m Model) renderMerchant() string {
 
 	page := b.String() + "\n" + styles.Dim.Render("press any key to close")
 	return styles.Pane.Width(m.w - 2).Height(bodyH).Render(page)
+}
+
+func bal(v *float64) string {
+	if v == nil {
+		return "—"
+	}
+	return fmt.Sprintf("%.2f", *v)
+}
+
+// renderIngest draws the ingest flow (bank picker → sync/import → preview).
+func (m Model) renderIngest() string {
+	g := m.ingest
+	bodyH := m.h - 4
+	if bodyH < 3 {
+		bodyH = 3
+	}
+	var b strings.Builder
+	b.WriteString(styles.Title.Render("import") + "  " + styles.Dim.Render("verify → inbox") + "\n\n")
+
+	if g.busy {
+		b.WriteString(styles.Warn.Render("working…"))
+		return styles.Pane.Width(m.w - 2).Height(bodyH).Render(b.String())
+	}
+
+	switch g.step {
+	case stepBank:
+		b.WriteString(styles.Muted.Render("pick a bank") + "\n\n")
+		if len(g.banks) == 0 {
+			b.WriteString(styles.Muted.Render("no banks configured — run `fin banks migrate`"))
+			break
+		}
+		for i, bk := range g.banks {
+			line := fmt.Sprintf("%-16s %s  %s", bk.Bank,
+				styles.Key.Render(fmt.Sprintf("%-4s", bk.Source)), styles.Dim.Render(bk.Name))
+			if i == g.cursor {
+				b.WriteString(styles.Sel.Width(m.w-4).Render("› "+line) + "\n")
+			} else {
+				b.WriteString("  " + line + "\n")
+			}
+		}
+
+	case stepSync:
+		b.WriteString(fmt.Sprintf("%s %s  %s\n\n",
+			styles.Muted.Render("sync"), styles.Title.Render(g.bank.Name),
+			styles.Dim.Render("["+g.account+"]")))
+		b.WriteString(styles.Muted.Render("range  ") + styles.Key.Render(fmt.Sprintf("last %d days", g.daysBack)) +
+			styles.Dim.Render("   (h/l to adjust)") + "\n\n")
+		b.WriteString(styles.Ok.Render("enter to fetch"))
+
+	case stepPath:
+		b.WriteString(fmt.Sprintf("%s %s  %s\n\n",
+			styles.Muted.Render("import"), styles.Title.Render(g.bank.Name),
+			styles.Dim.Render("["+g.account+"] "+g.bank.Source)))
+		b.WriteString(styles.Muted.Render("file ▸ ") + m.input.View() + "\n\n")
+		b.WriteString(styles.Dim.Render("enter to parse (dry-run) · esc back"))
+
+	case stepPreview:
+		b.WriteString(styles.Title.Render(g.bank.Name) + styles.Dim.Render(" ["+g.account+"]") + "\n\n")
+		if g.errMsg != "" {
+			b.WriteString(styles.Out.Render("parse failed") + "\n")
+			b.WriteString(styles.Dim.Render(trunc(g.errMsg, m.w-6)) + "\n\n")
+			aiState := "off"
+			if g.ai {
+				aiState = "on"
+			}
+			b.WriteString(styles.Muted.Render("AI fallback: ") + styles.Key.Render(aiState) +
+				styles.Dim.Render("   a toggle+retry · esc back"))
+			break
+		}
+		p := g.preview
+		b.WriteString(fmt.Sprintf("%s  %s\n", styles.Muted.Render("rows"), styles.Title.Render(fmt.Sprintf("%d", p.Rows))))
+		b.WriteString(fmt.Sprintf("%s  %s new, %s already present\n",
+			styles.Muted.Render("new "), styles.Ok.Render(fmt.Sprintf("%d", p.Inserted)),
+			styles.Dim.Render(fmt.Sprintf("%d", p.Skipped))))
+		if p.Summary.DateRange != nil {
+			b.WriteString(styles.Muted.Render("dates ") + p.Summary.DateRange.Start + " → " + p.Summary.DateRange.End + "\n")
+		}
+		b.WriteString(styles.Muted.Render("bal   ") + bal(p.Summary.OpeningBalance) + " → " + bal(p.Summary.ClosingBalance) + "\n\n")
+		if p.Summary.BalanceChainVerified {
+			b.WriteString(styles.Ok.Render("balance chain verified ✓"))
+		} else {
+			b.WriteString(styles.Warn.Render("balance chain not verified (no per-row balance)"))
+		}
+		aiState := "off"
+		if g.ai {
+			aiState = "on"
+		}
+		b.WriteString("\n\n" + styles.Dim.Render("enter to commit · a AI:"+aiState+" · esc back"))
+	}
+	return styles.Pane.Width(m.w - 2).Height(bodyH).Render(b.String())
 }
 
 func (m Model) splitHelp() string {
@@ -372,10 +466,16 @@ func (m Model) footer() string {
 	if m.mode == finder {
 		return styles.Help.Render("enter select · ctrl-n/p move · esc cancel")
 	}
+	if m.ingest.active {
+		if m.ingest.busy {
+			return styles.Help.Render("working… (ctrl-c quits)")
+		}
+		return styles.Help.Render("j/k move · enter next · esc back")
+	}
 	if m.split.active {
 		return styles.Help.Render(m.splitHelp())
 	}
-	help := "j/k move · enter accept · 1-9 pick · c cat · s split · m peek · x reject · a auto · u undo · ? help · q quit"
+	help := "j/k move · enter accept · 1-9 pick · c cat · s split · m peek · x reject · a auto · :import · u undo · ? help · q quit"
 	if m.scope == "review" {
 		help = "j confirm+next · k up · c correct · s split · m peek · x reject · u undo · ? help · q quit"
 	}

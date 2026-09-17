@@ -43,6 +43,8 @@ type Model struct {
 	merchant     *api.MerchantDetail // the merchant peek payload
 	showMerchant bool
 
+	ingest ingestState
+
 	w, h     int
 	msg      string
 	loading  bool
@@ -217,6 +219,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.loadTax())
 		}
 		return m, tea.Batch(cmds...)
+	case banksMsg:
+		m.ingest.busy = false
+		if msg.err != nil {
+			m.msg = "banks: " + msg.err.Error()
+			m.ingest.active = false
+			return m, nil
+		}
+		m.ingest.banks = msg.banks
+		return m, nil
+	case previewMsg:
+		m.ingest.busy = false
+		if msg.err != nil {
+			m.ingest.preview = nil
+			m.ingest.errMsg = msg.err.Error()
+		} else {
+			m.ingest.preview = msg.res
+			m.ingest.errMsg = ""
+		}
+		m.ingest.step = stepPreview
+		return m, nil
+	case ingestDoneMsg:
+		m.ingest.busy = false
+		m.ingest.active = false
+		if msg.err != nil {
+			m.msg = "error: " + msg.err.Error()
+			return m, nil
+		}
+		m.msg = msg.message
+		m.scope = "uncat"
+		m.cursor = 0
+		m.loading = true
+		m.undo, m.redo = nil, nil // imported rows change the world; drop undo history
+		return m, tea.Batch(m.loadPlan(), m.loadStatus())
 	case tea.KeyMsg:
 		if m.showHelp { // help is a modal overlay: any key dismisses it
 			m.showHelp = false
@@ -232,6 +267,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case command:
 			return m.updateCommand(msg)
 		default:
+			if m.ingest.active {
+				return m.updateIngest(msg)
+			}
 			if m.split.active {
 				return m.updateSplit(msg)
 			}
@@ -426,6 +464,9 @@ func (m Model) updateCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case "cat":
 			return m.categoryCommand(fields[1:])
+		case "import", "in":
+			cmd := m.startIngest()
+			return m, cmd
 		default:
 			m.msg = "unknown command: " + raw
 			return m, nil

@@ -17,6 +17,9 @@ type Client struct {
 	base  string
 	token string
 	http  *http.Client
+	// long is for ingestion (sync / import), which can run well past the
+	// interactive timeout — AI PDF extraction especially.
+	long *http.Client
 }
 
 func New() *Client {
@@ -24,10 +27,19 @@ func New() *Client {
 	if base == "" {
 		base = "http://127.0.0.1:8765"
 	}
-	return &Client{base: base, token: os.Getenv("FIN_API_TOKEN"), http: &http.Client{Timeout: 20 * time.Second}}
+	return &Client{
+		base:  base,
+		token: os.Getenv("FIN_API_TOKEN"),
+		http:  &http.Client{Timeout: 20 * time.Second},
+		long:  &http.Client{Timeout: 5 * time.Minute},
+	}
 }
 
 func (c *Client) do(method, path string, body any, out any) error {
+	return c.doWith(c.http, method, path, body, out)
+}
+
+func (c *Client) doWith(hc *http.Client, method, path string, body any, out any) error {
 	var r io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -43,7 +55,7 @@ func (c *Client) do(method, path string, body any, out any) error {
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
-	resp, err := c.http.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return err
 	}
@@ -207,6 +219,69 @@ func (c *Client) Reject(bank, id string) (*MutationResult, error) {
 // Restore writes a full record snapshot back in place — the undo/redo primitive.
 func (c *Client) Restore(bank string, record json.RawMessage) error {
 	return c.do("POST", "/categorize/restore", map[string]any{"bank": bank, "record": record}, nil)
+}
+
+// ── ingestion ────────────────────────────────────────────────────────────────
+
+type Bank struct {
+	Bank     string   `json:"bank"`
+	Name     string   `json:"name"`
+	Currency string   `json:"currency"`
+	Source   string   `json:"source"` // api | csv | pdf
+	Accounts []string `json:"accounts"`
+}
+
+func (c *Client) Banks() ([]Bank, error) {
+	var out []Bank
+	return out, c.do("GET", "/banks", nil, &out)
+}
+
+type SyncResult struct {
+	Bank     string `json:"bank"`
+	Account  string `json:"account"`
+	Fetched  int    `json:"fetched"`
+	Inserted int    `json:"inserted"`
+	Updated  int    `json:"updated"`
+}
+
+func (c *Client) Sync(bank, account string, daysBack int) (*SyncResult, error) {
+	var out SyncResult
+	body := map[string]any{"bank": bank, "account": account, "days_back": daysBack}
+	return &out, c.doWith(c.long, "POST", "/sync", body, &out)
+}
+
+type DateRange struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
+type ImportSummary struct {
+	Rows                 int        `json:"rows"`
+	DateRange            *DateRange `json:"date_range"`
+	OpeningBalance       *float64   `json:"opening_balance"`
+	ClosingBalance       *float64   `json:"closing_balance"`
+	BalanceChainVerified bool       `json:"balance_chain_verified"`
+}
+
+type ImportResult struct {
+	Bank     string        `json:"bank"`
+	Account  string        `json:"account"`
+	Profile  string        `json:"profile"`
+	Format   string        `json:"format"`
+	Rows     int           `json:"rows"`
+	Inserted int           `json:"inserted"`
+	Skipped  int           `json:"skipped_already_present"`
+	DryRun   bool          `json:"dry_run"`
+	Summary  ImportSummary `json:"summary"`
+}
+
+func (c *Client) Import(bank, account, path string, dryRun, ai bool) (*ImportResult, error) {
+	var out ImportResult
+	body := map[string]any{
+		"bank": bank, "account": account, "path": path,
+		"dry_run": dryRun, "ai_fallback": ai,
+	}
+	return &out, c.doWith(c.long, "POST", "/import", body, &out)
 }
 
 // MerchantDetail returns a merchant's category breakdown and recent examples,
