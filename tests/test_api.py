@@ -56,6 +56,13 @@ def test_plan_recommends_from_history(client):
     assert starbucks["classification"]["recommended"] == "expenses:coffee"
     assert starbucks["classification"]["auto"] is True
 
+    # the merchant_key lets the TUI peek at the merchant's history
+    key = starbucks["classification"]["merchant_key"]
+    assert key
+    detail = client.get(f"/merchants/{key}").json()
+    assert detail["merchant"] == "Starbucks"
+    assert any(b["category"] == "expenses:coffee" for b in detail["breakdown"])
+
 
 def test_auto_then_review_then_confirm(client):
     result = client.post("/categorize/auto", json={"bank": "investec"}).json()

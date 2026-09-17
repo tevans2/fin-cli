@@ -37,6 +37,7 @@ class Classification:
     source: str                             # "rule:<name>" | "history" | "history:fuzzy" | "none"
     candidates: list[Candidate] = field(default_factory=list)
     auto: bool = False                      # safe to apply without asking
+    merchant_key: str | None = None         # normalized identity, for merchant lookups
 
 
 def _merchant_name(key: str, history: HistoryModel) -> str | None:
@@ -67,6 +68,7 @@ def classify(
                 source=f"rule:{rule.name}",
                 candidates=[Candidate(rule.category, 1.0)],
                 auto=True,
+                merchant_key=key,
             )
 
     # 2. learned history
@@ -83,6 +85,7 @@ def classify(
             source=suggestion.source,
             candidates=candidates,
             auto=suggestion.is_confident,
+            merchant_key=key,
         )
 
     # 3. nothing known
@@ -93,4 +96,5 @@ def classify(
         source="none",
         candidates=candidates,
         auto=False,
+        merchant_key=key,
     )

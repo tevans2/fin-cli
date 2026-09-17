@@ -55,6 +55,9 @@ func (m Model) View() string {
 	if m.showHelp {
 		return strings.Join([]string{m.header(), m.renderHelp(), m.footer()}, "\n")
 	}
+	if m.showMerchant {
+		return strings.Join([]string{m.header(), m.renderMerchant(), m.footer()}, "\n")
+	}
 	listW := m.w * 42 / 100
 	if listW < 26 {
 		listW = 26
@@ -206,12 +209,13 @@ func (m Model) renderHelp() string {
 		{"1 – 9", "pick a ranked candidate"},
 		{"c", "choose a category (fuzzy finder)"},
 		{"s", "split across categories (amount or %)"},
+		{"m", "peek at this merchant's history"},
 		{"x", "reject → back to uncategorized"},
 		{"a", "auto-apply all confident matches"},
 	})
 	commands := section("commands  (press : then type)", []row{
 		{":uncat", "uncategorized inbox"},
-		{":review", "auto-classified, awaiting review"},
+		{":review", "auto-classified (j confirms + advances)"},
 		{":all", "every transaction"},
 		{":auto", "auto-apply confident matches"},
 		{":cat add <name>", "add a category"},
@@ -239,6 +243,42 @@ func (m Model) renderHelp() string {
 
 	dismiss := styles.Dim.Render("press ? or esc to close")
 	page := lipgloss.JoinVertical(lipgloss.Left, cols, "", dismiss)
+	return styles.Pane.Width(m.w - 2).Height(bodyH).Render(page)
+}
+
+// renderMerchant is the modal peek at a merchant's history (toggled with m).
+func (m Model) renderMerchant() string {
+	d := m.merchant
+	bodyH := m.h - 4
+	if bodyH < 3 {
+		bodyH = 3
+	}
+	if d == nil {
+		return styles.Pane.Width(m.w - 2).Height(bodyH).Render(styles.Muted.Render("no merchant"))
+	}
+	var b strings.Builder
+	b.WriteString(styles.Title.Render(d.Merchant) + "  " +
+		styles.Muted.Render(fmt.Sprintf("%d transactions", d.Samples)) + "\n\n")
+
+	b.WriteString(styles.Muted.Render("categories") + "\n")
+	for _, r := range d.Breakdown {
+		b.WriteString(fmt.Sprintf("  %-32s %s  %s\n",
+			trunc(r.Category, 32),
+			styles.Key.Render(fmt.Sprintf("%3.0f%%", r.Share*100)),
+			styles.Dim.Render(fmt.Sprintf("×%d", r.Count))))
+	}
+
+	b.WriteString("\n" + styles.Muted.Render("recent") + "\n")
+	max := bodyH - len(d.Breakdown) - 6
+	for i, r := range d.Examples {
+		if i >= max || i >= 12 {
+			break
+		}
+		amt := amountStyle(r.Amount).Render(fmt.Sprintf("%10s", r.Amount))
+		b.WriteString(fmt.Sprintf("  %s  %s  %s\n", r.Date, amt, styles.Dim.Render(trunc(r.Category, 28))))
+	}
+
+	page := b.String() + "\n" + styles.Dim.Render("press any key to close")
 	return styles.Pane.Width(m.w - 2).Height(bodyH).Render(page)
 }
 
@@ -335,9 +375,9 @@ func (m Model) footer() string {
 	if m.split.active {
 		return styles.Help.Render(m.splitHelp())
 	}
-	help := "j/k move · enter accept · 1-9 pick · c cat · s split · x reject · a auto · u undo · ? help · q quit"
+	help := "j/k move · enter accept · 1-9 pick · c cat · s split · m peek · x reject · a auto · u undo · ? help · q quit"
 	if m.scope == "review" {
-		help = "j/k move · y confirm · c correct · s split · x reject · u undo · ? help · q quit"
+		help = "j confirm+next · k up · c correct · s split · m peek · x reject · u undo · ? help · q quit"
 	}
 	line := styles.Help.Render(help)
 	if m.msg != "" {

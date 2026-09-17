@@ -40,6 +40,9 @@ type Model struct {
 	undo []undoEntry
 	redo []undoEntry
 
+	merchant     *api.MerchantDetail // the merchant peek payload
+	showMerchant bool
+
 	w, h     int
 	msg      string
 	loading  bool
@@ -219,6 +222,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showHelp = false
 			return m, nil
 		}
+		if m.showMerchant { // merchant peek is modal too
+			m.showMerchant = false
+			return m, nil
+		}
 		switch m.mode {
 		case finder:
 			return m.updateFinder(msg)
@@ -241,6 +248,12 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quit = true
 		return m, tea.Quit
 	case "j", "down":
+		// In review, scrolling down confirms the item you're leaving (fast triage).
+		if m.scope == "review" && ok {
+			res, err := m.client.Confirm(it.Record.Institution, []string{it.Record.ID})
+			m.removeCurrent()
+			return m, m.mutate(it.Record.Institution, res, err, "confirm")
+		}
 		if m.cursor < len(m.items)-1 {
 			m.cursor++
 		}
@@ -271,6 +284,17 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s": // split the focused transaction across categories
 		if ok {
 			m.startSplit(it)
+		}
+		return m, nil
+	case "m": // peek at this merchant's history
+		if ok && it.Classification.MerchantKey != nil && *it.Classification.MerchantKey != "" {
+			d, err := m.client.MerchantDetail(*it.Classification.MerchantKey)
+			if err != nil {
+				m.msg = "no history yet for this merchant"
+				return m, nil
+			}
+			m.merchant = d
+			m.showMerchant = true
 		}
 		return m, nil
 	case ":":

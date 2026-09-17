@@ -93,11 +93,26 @@ type Candidate struct {
 
 type Classification struct {
 	Merchant    *string     `json:"merchant"`
+	MerchantKey *string     `json:"merchant_key"`
 	Recommended *string     `json:"recommended"`
 	Confidence  float64     `json:"confidence"`
 	Source      string      `json:"source"`
 	Auto        bool        `json:"auto"`
 	Candidates  []Candidate `json:"candidates"`
+}
+
+type BreakdownRow struct {
+	Category string  `json:"category"`
+	Count    int     `json:"count"`
+	Share    float64 `json:"share"`
+}
+
+type MerchantDetail struct {
+	Key       string         `json:"key"`
+	Merchant  string         `json:"merchant"`
+	Samples   int            `json:"samples"`
+	Breakdown []BreakdownRow `json:"breakdown"`
+	Examples  []Record       `json:"examples"`
 }
 
 type PlanItem struct {
@@ -192,6 +207,14 @@ func (c *Client) Reject(bank, id string) (*MutationResult, error) {
 // Restore writes a full record snapshot back in place — the undo/redo primitive.
 func (c *Client) Restore(bank string, record json.RawMessage) error {
 	return c.do("POST", "/categorize/restore", map[string]any{"bank": bank, "record": record}, nil)
+}
+
+// MerchantDetail returns a merchant's category breakdown and recent examples,
+// or an error (e.g. "unknown merchant" when there's no history yet).
+func (c *Client) MerchantDetail(key string) (*MerchantDetail, error) {
+	var out MerchantDetail
+	err := c.do("GET", "/merchants/"+url.PathEscape(key), nil, &out)
+	return &out, err
 }
 
 func (c *Client) AddCategory(name string) error {

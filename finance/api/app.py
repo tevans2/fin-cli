@@ -81,6 +81,7 @@ class ImportBody(BaseModel):
 def _classification_dict(c: Classification) -> dict:
     return {
         "merchant": c.merchant,
+        "merchant_key": c.merchant_key,
         "recommended": c.recommended,
         "confidence": c.confidence,
         "source": c.source,
