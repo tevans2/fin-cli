@@ -21,10 +21,11 @@ import (
 type ingestStep int
 
 const (
-	stepBank    ingestStep = iota // choosing which bank
-	stepSync                      // api: confirm the pull
-	stepPath                      // csv/pdf: enter the file path
-	stepPreview                   // csv/pdf: dry-run result, confirm commit
+	stepBank     ingestStep = iota // choosing which bank
+	stepSync                       // api: confirm the pull
+	stepPath                       // csv/pdf: enter the file path
+	stepPassword                   // csv/pdf: the file is an encrypted PDF
+	stepPreview                    // csv/pdf: dry-run result, confirm commit
 )
 
 type ingestState struct {
@@ -36,7 +37,10 @@ type ingestState struct {
 	bank     api.Bank // the selected bank
 	account  string
 	daysBack int
-	ai       bool // AI fallback for the next parse
+	ai       bool   // AI fallback for the next parse
+	path     string // the file being imported (kept across the password step)
+	password string
+	pwRetry  bool // the last password attempt was wrong
 	preview  *api.ImportResult
 	errMsg   string // a dry-run/parse error (e.g. broken balance chain)
 }
@@ -64,11 +68,12 @@ func (m *Model) startIngest() tea.Cmd {
 	return func() tea.Msg { b, err := c.Banks(); return banksMsg{b, err} }
 }
 
-func (m Model) runImport(path string, dryRun bool) tea.Cmd {
+func (m Model) runImport(dryRun bool) tea.Cmd {
 	c := m.client
-	bank, account, ai := m.ingest.bank.Bank, m.ingest.account, m.ingest.ai
+	g := m.ingest
+	bank, account, path, ai, pw := g.bank.Bank, g.account, g.path, g.ai, g.password
 	return func() tea.Msg {
-		res, err := c.Import(bank, account, path, dryRun, ai)
+		res, err := c.Import(bank, account, path, dryRun, ai, pw)
 		if dryRun {
 			return previewMsg{res: res, err: err}
 		}
@@ -155,8 +160,29 @@ func (m Model) updateIngest(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if path == "" {
 				return m, nil
 			}
+			g.path = path
+			g.password, g.pwRetry = "", false
 			g.busy = true
-			return m, m.runImport(path, true) // dry-run first
+			return m, m.runImport(true) // dry-run first
+		}
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(msg)
+		return m, cmd
+
+	case stepPassword:
+		switch msg.String() {
+		case "esc":
+			m.input.EchoMode = textinput.EchoNormal
+			g.step = stepPath
+			m.input.SetValue(g.path)
+			m.input.Focus()
+			return m, textinput.Blink
+		case "enter":
+			g.password = m.input.Value()
+			m.input.EchoMode = textinput.EchoNormal
+			m.input.SetValue("")
+			g.busy = true
+			return m, m.runImport(true) // retry the dry-run with the password
 		}
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
@@ -167,16 +193,17 @@ func (m Model) updateIngest(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc":
 			g.step = stepPath
 			g.preview, g.errMsg = nil, ""
+			m.input.SetValue(g.path)
 			m.input.Focus()
 			return m, textinput.Blink
 		case "a": // toggle AI fallback and re-parse
 			g.ai = !g.ai
 			g.busy = true
-			return m, m.runImport(strings.TrimSpace(m.input.Value()), true)
+			return m, m.runImport(true)
 		case "enter": // commit (only when we have a clean dry-run)
 			if g.preview != nil {
 				g.busy = true
-				return m, m.runImport(strings.TrimSpace(m.input.Value()), false)
+				return m, m.runImport(false)
 			}
 		}
 	}

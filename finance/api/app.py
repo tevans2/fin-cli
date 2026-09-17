@@ -75,6 +75,7 @@ class ImportBody(BaseModel):
     account: str = "checking"
     ai_fallback: bool = False
     dry_run: bool = False
+    password: str | None = None
 
 
 class SyncBody(BaseModel):
@@ -386,14 +387,18 @@ def create_app() -> FastAPI:
     def import_statement_route(body: ImportBody) -> dict:
         from finance.banks import load_bank
         from finance.services.statement_import import import_statement
+        from finance.statements.model import PasswordRequiredError
 
         with _write_lock:
             try:
                 profile = load_bank(body.bank).parse_profile(body.account)
                 result = import_statement(
                     body.path, bank=body.bank, account=body.account, profile=profile,
-                    dry_run=body.dry_run, ai_fallback=body.ai_fallback,
+                    dry_run=body.dry_run, ai_fallback=body.ai_fallback, password=body.password,
                 )
+            except PasswordRequiredError as exc:
+                # stable sentinel so a client can prompt (400, not the auth 401)
+                raise HTTPException(400, detail="password_required") from exc
             except Exception as exc:
                 raise HTTPException(400, str(exc)) from exc
             mark_dirty()

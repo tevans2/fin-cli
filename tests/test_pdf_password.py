@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from finance.services.statement_import import doc_code_env_var, get_doc_code
-from finance.statements.model import StatementFormatError
+from finance.statements.model import PasswordRequiredError, StatementFormatError
 from finance.statements.parse import parse_statement
 from finance.statements.pdf_parser import extract_lines
 from finance.statements.profile import StatementProfile
@@ -29,20 +29,32 @@ def test_get_doc_code_missing_is_none(monkeypatch, tmp_path):
     assert get_doc_code("acme") is None
 
 
-def test_extract_lines_password_error_hints_env_var(monkeypatch, tmp_path):
+def test_extract_lines_raises_password_required(monkeypatch, tmp_path):
     import pdfplumber
 
     monkeypatch.setattr(pdfplumber, "open", lambda *a, **k: (_ for _ in ()).throw(ValueError("encrypted")))
     pdf = tmp_path / "x.pdf"
     pdf.write_bytes(b"%PDF-1.4")
 
-    with pytest.raises(StatementFormatError) as no_pw:
+    # a distinct, catchable error so a frontend can prompt (still a StatementFormatError)
+    with pytest.raises(PasswordRequiredError) as no_pw:
         extract_lines(pdf)
-    assert "DOC_CODE" in str(no_pw.value)
+    assert "password-protected" in str(no_pw.value)
 
-    with pytest.raises(StatementFormatError) as wrong_pw:
+    with pytest.raises(PasswordRequiredError) as wrong_pw:
         extract_lines(pdf, password="nope")
     assert "wrong password" in str(wrong_pw.value)
+
+
+def test_non_password_pdf_error_is_plain_format_error(monkeypatch, tmp_path):
+    import pdfplumber
+
+    monkeypatch.setattr(pdfplumber, "open", lambda *a, **k: (_ for _ in ()).throw(ValueError("boom")))
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+    with pytest.raises(StatementFormatError) as exc:
+        extract_lines(pdf)
+    assert not isinstance(exc.value, PasswordRequiredError)
 
 
 def test_pdf_password_threads_through_to_parser(monkeypatch, tmp_path):

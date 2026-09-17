@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from finance.statements.model import StatementFormatError, StatementRow
+from finance.statements.model import PasswordRequiredError, StatementFormatError, StatementRow
 from finance.statements.normalize import parse_date, to_decimal
 from finance.statements.profile import StatementProfile
 
@@ -99,6 +99,12 @@ def rows_from_lines(lines: list[str], profile: StatementProfile) -> list[Stateme
     return rows
 
 
+def _looks_like_password_error(exc: Exception) -> bool:
+    """True when pdfminer/pdfplumber failed because the PDF is encrypted."""
+    text = (type(exc).__name__ + " " + str(exc)).lower()
+    return "password" in text or "encrypt" in text
+
+
 def extract_lines(
     path: Path,
     password: str | None = None,
@@ -121,12 +127,11 @@ def extract_lines(
     try:
         pdf = pdfplumber.open(str(path), password=password or "")
     except Exception as exc:
-        hint = (
-            "wrong password"
-            if password
-            else "it may be password-protected — set <BANK>_DOC_CODE in your environment or .env"
-        )
-        raise StatementFormatError(f"Could not open PDF ({hint}): {exc}") from exc
+        if _looks_like_password_error(exc):
+            raise PasswordRequiredError(
+                "wrong password" if password else "PDF is password-protected"
+            ) from exc
+        raise StatementFormatError(f"Could not open PDF: {exc}") from exc
 
     kwargs = {}
     if x_tolerance is not None:

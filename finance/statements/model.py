@@ -8,6 +8,14 @@ class StatementFormatError(ValueError):
     """The statement file could not be parsed against its profile."""
 
 
+class PasswordRequiredError(StatementFormatError):
+    """The PDF is encrypted and the supplied password was missing or wrong.
+
+    A subclass of StatementFormatError so existing handlers still catch it, but
+    distinct so a frontend can prompt for the password instead of giving up.
+    """
+
+
 class BalanceChainError(ValueError):
     """The running-balance column does not agree with the debits/credits."""
 

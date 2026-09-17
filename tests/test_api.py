@@ -124,6 +124,18 @@ def test_split_that_does_not_sum_is_400(client):
     assert resp.status_code == 400
 
 
+def test_import_password_required_sentinel(client, monkeypatch):
+    from finance.statements.model import PasswordRequiredError
+
+    def boom(*a, **k):
+        raise PasswordRequiredError("PDF is password-protected")
+
+    monkeypatch.setattr("finance.services.statement_import.import_statement", boom)
+    resp = client.post("/import", json={"bank": "investec", "path": "/tmp/x.pdf"})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "password_required"
+
+
 def test_banks_endpoint_reports_source(client):
     banks = {b["bank"]: b for b in client.get("/banks").json()}
     assert "investec" in banks

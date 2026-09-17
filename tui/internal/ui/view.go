@@ -340,6 +340,16 @@ func (m Model) renderIngest() string {
 		b.WriteString(styles.Muted.Render("file ▸ ") + m.input.View() + "\n\n")
 		b.WriteString(styles.Dim.Render("enter to parse (dry-run) · esc back"))
 
+	case stepPassword:
+		b.WriteString(styles.Title.Render(g.bank.Name) + styles.Dim.Render(" ["+g.account+"]") + "\n\n")
+		if g.pwRetry {
+			b.WriteString(styles.Out.Render("wrong password — try again") + "\n\n")
+		} else {
+			b.WriteString(styles.Muted.Render("this PDF is password-protected") + "\n\n")
+		}
+		b.WriteString(styles.Muted.Render("password ▸ ") + m.input.View() + "\n\n")
+		b.WriteString(styles.Dim.Render("enter to unlock · esc back"))
+
 	case stepPreview:
 		b.WriteString(styles.Title.Render(g.bank.Name) + styles.Dim.Render(" ["+g.account+"]") + "\n\n")
 		if g.errMsg != "" {

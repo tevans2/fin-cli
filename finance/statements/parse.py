@@ -6,6 +6,7 @@ from finance.statements.balance import can_verify, summarize, verify_balance_cha
 from finance.statements.csv_parser import parse_csv
 from finance.statements.model import (
     BalanceChainError,
+    PasswordRequiredError,
     StatementFormatError,
     StatementRow,
     StatementSummary,
@@ -82,6 +83,8 @@ def parse_statement(
         try:
             rows, account_name = parse_pdf(path, profile, password=pdf_password)
             return finalize(rows, profile, account_name)
+        except PasswordRequiredError:
+            raise  # AI can't unlock a PDF; surface it so the caller can prompt
         except (StatementFormatError, BalanceChainError) as exc:
             if not ai_fallback:
                 raise

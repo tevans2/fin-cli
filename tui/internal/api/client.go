@@ -275,11 +275,14 @@ type ImportResult struct {
 	Summary  ImportSummary `json:"summary"`
 }
 
-func (c *Client) Import(bank, account, path string, dryRun, ai bool) (*ImportResult, error) {
+func (c *Client) Import(bank, account, path string, dryRun, ai bool, password string) (*ImportResult, error) {
 	var out ImportResult
 	body := map[string]any{
 		"bank": bank, "account": account, "path": path,
 		"dry_run": dryRun, "ai_fallback": ai,
+	}
+	if password != "" {
+		body["password"] = password
 	}
 	return &out, c.doWith(c.long, "POST", "/import", body, &out)
 }

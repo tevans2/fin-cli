@@ -231,6 +231,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case previewMsg:
 		m.ingest.busy = false
 		if msg.err != nil {
+			if strings.Contains(msg.err.Error(), "password_required") {
+				// the PDF is encrypted: prompt (masked) instead of failing
+				m.ingest.pwRetry = m.ingest.password != ""
+				m.ingest.step = stepPassword
+				m.input.EchoMode = textinput.EchoPassword
+				m.input.SetValue("")
+				m.input.Focus()
+				return m, textinput.Blink
+			}
 			m.ingest.preview = nil
 			m.ingest.errMsg = msg.err.Error()
 		} else {

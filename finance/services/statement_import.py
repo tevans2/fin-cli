@@ -131,6 +131,7 @@ def import_statement(
     dry_run: bool = False,
     copy_raw: bool = True,
     ai_fallback: bool = False,
+    password: str | None = None,
 ) -> dict:
     """Parse and ingest a statement file for any bank.
 
@@ -148,7 +149,7 @@ def import_statement(
         profile = load_profile(bank, account)
 
     rows, summary = parse_statement(
-        source, profile, ai_fallback=ai_fallback, pdf_password=get_doc_code(bank)
+        source, profile, ai_fallback=ai_fallback, pdf_password=password or get_doc_code(bank)
     )
 
     config = load_app_config()
