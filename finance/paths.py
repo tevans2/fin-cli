@@ -45,6 +45,11 @@ class DataPaths:
         return self.config_dir / "banks.yaml"
 
     @property
+    def banks_dir(self) -> Path:
+        """Per-bank config files: config/banks/<bank>.yaml."""
+        return self.config_dir / "banks"
+
+    @property
     def rules_config(self) -> Path:
         return self.config_dir / "rules.yaml"
 
