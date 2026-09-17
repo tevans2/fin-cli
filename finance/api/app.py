@@ -77,6 +77,14 @@ class ImportBody(BaseModel):
     dry_run: bool = False
 
 
+class SyncBody(BaseModel):
+    bank: str
+    account: str = "checking"
+    days_back: int = 7
+    begin: str | None = None
+    end: str | None = None
+
+
 # ── serialization ─────────────────────────────────────────────────────────────
 def _classification_dict(c: Classification) -> dict:
     return {
@@ -347,14 +355,43 @@ def create_app() -> FastAPI:
             for row in verify_accounts()
         ]
 
+    @app.get("/banks", dependencies=guard)
+    def banks_route() -> list[dict]:
+        from finance.banks import list_banks, load_bank
+
+        out = []
+        for name in list_banks():
+            b = load_bank(name)
+            out.append({
+                "bank": b.bank, "name": b.name, "currency": b.currency,
+                "source": b.source, "accounts": b.account_names(),
+                "statements_dir": b.statements_dir,
+            })
+        return out
+
+    @app.post("/sync", dependencies=guard)
+    def sync_route(body: SyncBody) -> dict:
+        from finance.services.sync import sync_bank
+
+        with _write_lock:
+            try:
+                result = sync_bank(body.bank, account=body.account,
+                                   begin=body.begin, end=body.end, days_back=body.days_back)
+            except Exception as exc:
+                raise HTTPException(400, str(exc)) from exc
+            mark_dirty()
+        return result
+
     @app.post("/import", dependencies=guard)
     def import_statement_route(body: ImportBody) -> dict:
+        from finance.banks import load_bank
         from finance.services.statement_import import import_statement
 
         with _write_lock:
             try:
+                profile = load_bank(body.bank).parse_profile(body.account)
                 result = import_statement(
-                    body.path, bank=body.bank, account=body.account,
+                    body.path, bank=body.bank, account=body.account, profile=profile,
                     dry_run=body.dry_run, ai_fallback=body.ai_fallback,
                 )
             except Exception as exc:

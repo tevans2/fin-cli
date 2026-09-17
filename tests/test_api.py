@@ -124,6 +124,13 @@ def test_split_that_does_not_sum_is_400(client):
     assert resp.status_code == 400
 
 
+def test_banks_endpoint_reports_source(client):
+    banks = {b["bank"]: b for b in client.get("/banks").json()}
+    assert "investec" in banks
+    assert banks["investec"]["source"] == "api"   # seeded legacy investec has an api block
+    assert "checking" in banks["investec"]["accounts"]
+
+
 def test_add_category_and_taxonomy(client):
     assert client.get("/taxonomy").json()["categories"] == []
     client.post("/categories", json={"category": "expenses:new"})

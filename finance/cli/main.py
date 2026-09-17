@@ -691,6 +691,50 @@ def cmd_tui(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_banks_list(_: argparse.Namespace) -> int:
+    from finance.banks import list_banks, load_bank
+
+    names = list_banks()
+    if not names:
+        print("No banks configured yet.")
+        return 0
+    print(f"{'bank':16}{'source':8}{'name':24}accounts")
+    print("-" * 70)
+    for name in names:
+        b = load_bank(name)
+        print(f"{b.bank:16}{b.source:8}{b.name:24}{', '.join(b.account_names())}")
+    return 0
+
+
+def cmd_banks_migrate(args: argparse.Namespace) -> int:
+    """Write config/banks/<bank>.yaml for every legacy bank that lacks one."""
+    import yaml
+
+    from finance.banks import load_bank
+    from finance.config import load_app_config
+
+    config = load_app_config()
+    banks_dir = config.paths.banks_dir
+    banks_dir.mkdir(parents=True, exist_ok=True)
+    legacy = config.banks.get("banks", {})
+    if not legacy:
+        print("No legacy banks.yaml entries to migrate.")
+        return 0
+
+    wrote = 0
+    for name in sorted(legacy):
+        target = banks_dir / f"{name}.yaml"
+        if target.exists() and not args.force:
+            print(f"skip {name} (exists)")
+            continue
+        doc = load_bank(name).to_dict()  # synthesized from legacy + profile
+        target.write_text(yaml.safe_dump(doc, sort_keys=False))
+        print(f"wrote {target}")
+        wrote += 1
+    print(f"\nMigrated {wrote} bank(s). Review the files and set each ingest.source (api|csv|pdf).")
+    return 0
+
+
 def cmd_verify(_: argparse.Namespace) -> int:
     try:
         results = verify_accounts()
@@ -1074,6 +1118,15 @@ def build_parser() -> argparse.ArgumentParser:
     m_show.add_argument("key", help="Merchant key (from `fin merchants list`)")
     m_show.add_argument("--examples", type=int, default=12, help="How many example transactions to show")
     m_show.set_defaults(func=cmd_merchants_show)
+
+    banks = sub.add_parser("banks", help="Per-bank ingestion config (config/banks/<bank>.yaml)")
+    banks_sub = banks.add_subparsers(dest="banks_command", required=True)
+    banks_sub.add_parser("list", help="List configured banks and their ingest source").set_defaults(
+        func=cmd_banks_list)
+    b_migrate = banks_sub.add_parser(
+        "migrate", help="Write per-bank config files from the legacy banks.yaml")
+    b_migrate.add_argument("--force", action="store_true", help="Overwrite existing per-bank files")
+    b_migrate.set_defaults(func=cmd_banks_migrate)
 
     init_data = sub.add_parser("init-data", help="Initialize a new V2 data directory")
     init_data.add_argument("path", help="Target path for the separate finance data repo")
