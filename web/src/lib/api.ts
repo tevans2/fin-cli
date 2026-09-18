@@ -78,7 +78,9 @@ export interface Merchant {
 }
 
 export interface VerifyRow {
-  account: string
+  institution: string
+  source_account: string
+  ledger_account: string
   as_of?: string | null
   statement_balance: string
   ledger_balance: string | null

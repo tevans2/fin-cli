@@ -25,8 +25,9 @@
   function depth2(cat: string): string {
     return cat.split(':').slice(0, 2).join(':')
   }
-  function prettyAccount(a: string): string {
-    return a.replace(/^assets:bank:/, '').replace(/^assets:/, '').split(':').map((s) => s.replace(/-/g, ' ')).join(' · ')
+  function prettyAccount(v: VerifyRow): string {
+    const cap = (s: string) => s.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+    return `${cap(v.institution)} · ${cap(v.source_account)}`
   }
 
   function delta(c: number, p: number) {
@@ -156,7 +157,7 @@
       <div class="verify">
         {#each verify as v}
           <div class="vrow">
-            <span class="vacct">{prettyAccount(v.account)}</span>
+            <span class="vacct">{prettyAccount(v)}</span>
             <span class="vstatus" class:ok={v.ok} class:bad={!v.ok}>{v.ok ? 'reconciled' : 'drift'}</span>
             <span class="num" class:neg={!v.ok}>{v.difference !== null ? signed(v.difference) : '—'}</span>
           </div>
