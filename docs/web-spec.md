@@ -33,6 +33,64 @@ local API.
 - Alternative if preferred: **React + Vite** (bigger ecosystem, Recharts/ECharts).
   Everything else in this spec is stack-agnostic.
 
+## Design & UX
+
+**Mood: an instrument panel, not a consumer finance app.** Dark-first,
+terminal-adjacent, calm and dense-but-uncluttered — continuous with the TUI so
+moving between the two feels like one tool. Numbers are the hero; chrome recedes.
+
+**Color** — carried over from the TUI (`styles.go`) so the two frontends share a
+language. Defined as CSS custom properties on `:root`:
+- Surfaces: `--bg #0d0f12`, `--surface #16191d`, `--surface-2 #1d2127`,
+  `--border #262b32`.
+- Text: `--text #e6e9ef`, `--muted #8a92a0`, `--dim #565d68`.
+- Accents (semantic, used identically everywhere): `--accent #5fd7ff` (cyan —
+  headings/links/active), `--select #5f5fff` (indigo — selection/focus),
+  `--pos #87ff87` (green — income / money in / positive change),
+  `--neg #ff5f5f` (red — spend / money out / negative change),
+  `--warn #ffaf00` (amber — drift, lapsed, needs-attention).
+- Rule: **green = in, red = out, everywhere** — amounts, deltas, chart series.
+  Never rely on color alone; pair with sign (`+`/`−`) and, in charts, direct
+  labels.
+
+**Typography** — a clean UI sans (Inter) for labels/nav; a **monospace with
+tabular figures** (JetBrains Mono / IBM Plex Mono) for every number. Money is
+right-aligned and `font-variant-numeric: tabular-nums` so columns line up like a
+ledger. One accent weight for headings; otherwise restrained.
+
+**Layout** — a slim persistent left rail (page nav + inbox-count badges from
+`/status`), a **sticky filter bar** shared across pages (date range + bank; state
+lives in the URL query so views are bookmarkable and shareable), then a content
+grid of flat cards (thin border, no heavy shadows). Desktop/laptop-first — this is
+a local analysis tool; it stays usable down to ~1024px but mobile isn't a goal.
+
+**Keyboard-first, mirroring the TUI.** `g` then a letter jumps between pages
+(`gc` cashflow, `gt` trends, `gr` recurring, …), `j/k` move within tables/lists,
+`/` focuses search, `?` shows a shortcut sheet. Everything reachable without the
+mouse; hover/click just add convenience.
+
+**Charts** (ECharts, styled to the palette) — minimal chrome: faint `--border`
+gridlines, no boxed legends (prefer direct labels), palette accents for series,
+`--muted` axes. Tooltips show the **exact decimal value** (full precision, ZAR
+formatted); axes use compact notation (`R12k`, `R1.2m`). No chartjunk, no 3D, no
+gradients-for-decoration. Consistent chart type per concept: bars for
+income-vs-spend, line for net/savings-rate, sparklines for per-category trends,
+horizontal bars for category/merchant rankings.
+
+**Cross-linking** — the whole thing is a web of drill-downs: a category on Trends
+links to that category filtered in the Explorer; a merchant anywhere opens its
+Merchants page; a month on Cashflow filters everything to that month. Analysis is
+navigation, not dead-ends.
+
+**Number formatting** — ZAR with thousands separators; positive/negative by sign
++ color; compact on axes, full precision in tooltips and tables. Parse the API's
+decimal strings to numbers only for layout — never round-trip a displayed value.
+
+**States & motion** — quiet skeletons while loading, honest empty states ("no
+recurring merchants yet"), plain error banners with a retry. Motion is minimal and
+purposeful (chart transitions, selection), and respects
+`prefers-reduced-motion`.
+
 ## Pages
 ```
 /            Overview   — this month at a glance
