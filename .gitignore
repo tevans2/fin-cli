@@ -57,3 +57,8 @@ v2/.venv/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Web app build artifacts
+web/node_modules/
+web/dist/
+finance/webui/

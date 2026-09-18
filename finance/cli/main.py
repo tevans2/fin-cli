@@ -691,6 +691,63 @@ def cmd_tui(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_web(args: argparse.Namespace) -> int:
+    import json
+    import os
+    import secrets
+    import subprocess
+    import sys
+    import urllib.request
+    import webbrowser
+
+    from finance.api.app import _web_dist
+
+    if _web_dist() is None:
+        print("ERROR: web bundle not built. Run `make web` (or `make install`).")
+        return 1
+
+    # reuse a healthy running API (fin serve), else spawn an ephemeral one
+    runtime = settings.config_dir() / "runtime.json"
+    url = token = None
+    proc = None
+    if runtime.exists():
+        try:
+            rt = json.loads(runtime.read_text())
+            urllib.request.urlopen(rt["url"] + "/health", timeout=1)
+            url, token = rt["url"], rt["token"]
+        except Exception:
+            pass
+    if url is None:
+        token = secrets.token_urlsafe(24)
+        port = _free_port()
+        url = f"http://127.0.0.1:{port}"
+        env = {**os.environ, "FIN_API_TOKEN": token}
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "finance.api.app:app",
+             "--host", "127.0.0.1", "--port", str(port)],
+            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        if not _wait_healthy(url):
+            proc.terminate()
+            print("ERROR: could not start the API")
+            return 1
+
+    print(f"fin web → {url}")
+    if not args.no_open:
+        webbrowser.open(url)
+    if proc is None:
+        print("Using the running `fin serve` API (already serving; leave it running).")
+        return 0
+    print("Serving the web app. Press Ctrl+C to stop.")
+    try:
+        proc.wait()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        proc.terminate()
+    return 0
+
+
 def cmd_banks_list(_: argparse.Namespace) -> int:
     from finance.banks import list_banks, load_bank
 
@@ -1240,6 +1297,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     tui = sub.add_parser("tui", help="Launch the terminal UI (auto-starts the API)")
     tui.set_defaults(func=cmd_tui)
+
+    web = sub.add_parser("web", help="Launch the web dashboard (auto-starts the API)")
+    web.add_argument("--no-open", action="store_true", help="Don't open the browser")
+    web.set_defaults(func=cmd_web)
 
     analyze = sub.add_parser("analyze", help="Analyze spending: recurring, cashflow, trends")
     analyze_sub = analyze.add_subparsers(dest="analyze_command", required=True)

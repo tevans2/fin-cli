@@ -1,0 +1,69 @@
+:root {
+  /* palette — carried from the TUI (styles.go) and the design mockup */
+  --bg: #0d0f12;
+  --surface: #16191d;
+  --surface-2: #1d2127;
+  --border: #262b32;
+  --text: #e6e9ef;
+  --muted: #8a92a0;
+  --dim: #565d68;
+  --accent: #5fd7ff;
+  --accent-hover: #9ee8ff;
+  --select: #5f5fff;
+  --pos: #87ff87;
+  --neg: #ff5f5f;
+  --warn: #ffaf00;
+
+  --font-sans: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius: 8px;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); }
+a.plain { color: var(--text); }
+a.plain:hover { color: var(--accent); }
+
+input, button, select { font-family: inherit; }
+input::placeholder { color: var(--muted); }
+
+/* numbers everywhere line up like a ledger */
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.pos { color: var(--pos); }
+.neg { color: var(--neg); }
+.warn { color: var(--warn); }
+.muted { color: var(--muted); }
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 5px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+::-webkit-scrollbar-track { background: transparent; }

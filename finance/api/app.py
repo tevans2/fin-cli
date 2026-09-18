@@ -445,7 +445,57 @@ def create_app() -> FastAPI:
             ],
         }
 
+    # ── web app (served last so API routes win) ──────────────────────────────
+    _serve_web(app)
     return app
+
+
+def _web_dist():
+    """Locate the built web bundle: $FIN_WEB_DIST → packaged → repo web/dist."""
+    from pathlib import Path
+
+    candidates = []
+    if os.getenv("FIN_WEB_DIST"):
+        candidates.append(Path(os.environ["FIN_WEB_DIST"]))
+    here = Path(__file__).resolve()
+    candidates.append(here.parent.parent / "webui")        # finance/webui (packaged)
+    candidates.append(here.parents[2] / "web" / "dist")    # repo web/dist (dev)
+    for c in candidates:
+        if (c / "index.html").exists():
+            return c
+    return None
+
+
+def _serve_web(app: FastAPI) -> None:
+    import json
+    from pathlib import Path
+
+    from fastapi.responses import FileResponse, HTMLResponse
+    from fastapi.staticfiles import StaticFiles
+
+    dist = _web_dist()
+    if dist is None:
+        return
+    if (dist / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=str(dist / "assets")), name="assets")
+
+    index_html = (dist / "index.html").read_text()
+
+    def render_index() -> str:
+        token = os.getenv("FIN_API_TOKEN", "")
+        inject = f'<script>window.__FIN={{"token":{json.dumps(token)},"base":""}}</script>'
+        return index_html.replace("</head>", inject + "</head>", 1)
+
+    @app.get("/", response_class=HTMLResponse)
+    def _spa_root() -> str:  # noqa: ANN202
+        return render_index()
+
+    @app.get("/{path:path}", response_class=HTMLResponse)
+    def _spa(path: str):  # noqa: ANN202
+        f = dist / path
+        if path and Path(f).is_file() and dist in Path(f).resolve().parents:
+            return FileResponse(str(f))
+        return HTMLResponse(render_index())
 
 
 app = create_app()

@@ -5,7 +5,7 @@ BANK    := investec
 ACCOUNT := checking
 MONTH   := this month
 
-.PHONY: install dev tui sync categorize rules-apply verify \
+.PHONY: install dev tui web sync categorize rules-apply verify \
         bs is expenses unknowns review \
         spend-month spend-trend top-spend monthly \
         net-worth net-income \
@@ -18,13 +18,19 @@ help: ## Show this help
 
 # ── setup ─────────────────────────────────────────────────────────────────────
 
-install:     ## Install the `fin` CLI + API on your PATH and build the TUI
+install:     ## Install the `fin` CLI + API on your PATH and build the TUI + web
 	uv tool install --force --editable '.[ai,api]'
 	$(MAKE) tui
+	$(MAKE) web
 
 tui:         ## Build the Go/Bubble Tea TUI to ~/.local/bin/fin-tui
 	cd tui && go build -o $(HOME)/.local/bin/fin-tui ./cmd/fin-tui
 	@echo "built ~/.local/bin/fin-tui"
+
+web:         ## Build the web dashboard into finance/webui (served by `fin web`)
+	cd web && npm install && npm run build
+	rm -rf finance/webui && cp -r web/dist finance/webui
+	@echo "built finance/webui"
 
 dev:         ## Sync the project venv for development (tests, linting)
 	uv sync --extra dev --extra ai --extra api
