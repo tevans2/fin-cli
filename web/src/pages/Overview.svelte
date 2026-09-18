@@ -82,7 +82,7 @@
   $: incomeD = cur && prev ? delta(num(cur.income), num(prev.income)) : null
   $: spendD = cur && prev ? delta(num(cur.spend), num(prev.spend)) : null
   $: netD = cur && prev ? delta(num(cur.net), num(prev.net)) : null
-  $: rateD = cur && prev ? cur.savings_rate - prev.savings_rate : null
+  $: rateD = cur && prev ? num(cur.savings_rate) - num(prev.savings_rate) : null
   $: drift = verify.filter((v) => !v.ok && v.difference !== null)
 </script>
 

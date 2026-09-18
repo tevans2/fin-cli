@@ -30,8 +30,8 @@
   $: months = rows.length || 1
   $: posMonths = rows.filter((r) => num(r.net) > 0).length
   $: overallRate = sumIncome ? (sumNet / sumIncome) * 100 : 0
-  $: best = rows.reduce<CashflowRow | null>((b, r) => (!b || r.savings_rate > b.savings_rate ? r : b), null)
-  $: worst = rows.reduce<CashflowRow | null>((w, r) => (!w || r.savings_rate < w.savings_rate ? r : w), null)
+  $: best = rows.reduce<CashflowRow | null>((b, r) => (!b || num(r.savings_rate) > num(b.savings_rate) ? r : b), null)
+  $: worst = rows.reduce<CashflowRow | null>((w, r) => (!w || num(r.savings_rate) < num(w.savings_rate) ? r : w), null)
   $: maxNet = Math.max(1, ...rows.map((r) => Math.abs(num(r.net))))
 
   $: option = {
@@ -39,7 +39,7 @@
     tooltip: {
       trigger: 'axis',
       backgroundColor: '#1d2127', borderColor: '#262b32', textStyle: { color: '#e6e9ef', fontSize: 12 },
-      valueFormatter: (v: number) => (typeof v === 'number' && v <= 100 && v >= 0 ? v.toFixed(1) + '%' : money(v)),
+      valueFormatter: (v: number) => (v == null ? '—' : v <= 100 && v >= 0 ? v.toFixed(1) + '%' : money(v)),
     },
     legend: {
       data: ['income', 'spend', 'savings rate'], right: 0, top: 0,
@@ -59,7 +59,7 @@
     series: [
       { name: 'income', type: 'bar', data: rows.map((r) => num(r.income)), itemStyle: { color: '#87ff87', opacity: 0.85, borderRadius: [2, 2, 0, 0] }, barMaxWidth: 16 },
       { name: 'spend', type: 'bar', data: rows.map((r) => num(r.spend)), itemStyle: { color: '#ff5f5f', opacity: 0.85, borderRadius: [2, 2, 0, 0] }, barMaxWidth: 16 },
-      { name: 'savings rate', type: 'line', yAxisIndex: 1, data: rows.map((r) => +r.savings_rate.toFixed(1)), smooth: true, symbol: 'circle', symbolSize: 5, lineStyle: { color: '#5fd7ff', width: 2 }, itemStyle: { color: '#5fd7ff' } },
+      { name: 'savings rate', type: 'line', yAxisIndex: 1, data: rows.map((r) => +num(r.savings_rate).toFixed(1)), smooth: true, symbol: 'circle', symbolSize: 5, lineStyle: { color: '#5fd7ff', width: 2 }, itemStyle: { color: '#5fd7ff' } },
     ],
   } as any
 

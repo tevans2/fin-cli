@@ -32,7 +32,7 @@ export interface CashflowRow {
   income: string
   spend: string
   net: string
-  savings_rate: number
+  savings_rate: number | null
 }
 
 export interface Trend {

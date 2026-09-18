@@ -34,7 +34,7 @@ export function compact(v: string | number): string {
   return 'R' + Math.round(n)
 }
 
-export function pct(v: number | string, digits = 1): string {
+export function pct(v: number | string | null | undefined, digits = 1): string {
   return num(v).toFixed(digits) + '%'
 }
 
