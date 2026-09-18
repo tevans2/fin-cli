@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { range, bank, RANGES } from '../lib/filters'
+  import { range, bank, search, RANGES } from '../lib/filters'
   import type { Bank } from '../lib/api'
 
   export let banks: Bank[] = []
@@ -29,7 +29,7 @@
     </select>
   </label>
 
-  <input class="search" type="search" placeholder="Search transactions" />
+  <input class="search" type="search" placeholder="Search transactions" bind:value={$search} />
 
   {#if txnCount !== null}
     <span class="count num">{txnCount.toLocaleString('en-ZA')} txns</span>

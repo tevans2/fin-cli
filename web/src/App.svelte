@@ -3,7 +3,10 @@
   import Nav from './components/Nav.svelte'
   import Overview from './pages/Overview.svelte'
   import Cashflow from './pages/Cashflow.svelte'
-  import Placeholder from './pages/Placeholder.svelte'
+  import Trends from './pages/Trends.svelte'
+  import Recurring from './pages/Recurring.svelte'
+  import Explorer from './pages/Explorer.svelte'
+  import Merchants from './pages/Merchants.svelte'
   import ShortcutHelp from './components/ShortcutHelp.svelte'
   import { route, installKeys } from './lib/router'
   import { api, type Status, type Bank } from './lib/api'
@@ -27,13 +30,13 @@
     {:else if $route === 'cashflow'}
       <Cashflow {banks} />
     {:else if $route === 'trends'}
-      <Placeholder title="Trends" />
+      <Trends {banks} />
     {:else if $route === 'recurring'}
-      <Placeholder title="Recurring" />
+      <Recurring {banks} />
     {:else if $route === 'explorer'}
-      <Placeholder title="Explorer" />
+      <Explorer {banks} />
     {:else if $route === 'merchants'}
-      <Placeholder title="Merchants" />
+      <Merchants />
     {/if}
   </main>
 </div>

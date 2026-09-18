@@ -77,6 +77,15 @@ export interface Merchant {
   conflicted: boolean
 }
 
+export interface MerchantBreakdown { category: string; count: number; share: number }
+export interface MerchantDetail {
+  key: string
+  merchant: string
+  samples: number
+  breakdown: MerchantBreakdown[]
+  examples: Txn[]
+}
+
 export interface VerifyRow {
   institution: string
   source_account: string
@@ -108,6 +117,7 @@ export const api = {
   transactions: (params: Record<string, string | number | undefined>) =>
     get<Txn[]>(`/transactions${qs(params)}`),
   merchants: () => get<Merchant[]>('/merchants'),
+  merchant: (key: string) => get<MerchantDetail>(`/merchants/${encodeURIComponent(key)}`),
   verify: () => get<VerifyRow[]>('/verify'),
   banks: () => get<Bank[]>('/banks'),
 }

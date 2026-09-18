@@ -5,6 +5,7 @@ export type Range = 'month' | '3m' | '6m' | '12m'
 // Shared, cross-page filter state. (URL-encoding is a later refinement.)
 export const range = writable<Range>('month')
 export const bank = writable<string>('all') // 'all' | a bank key
+export const search = writable<string>('') // free-text, used by the Explorer
 
 export const RANGES: { key: Range; label: string; months: number }[] = [
   { key: 'month', label: 'This month', months: 1 },
