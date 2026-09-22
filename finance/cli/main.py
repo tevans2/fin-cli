@@ -748,6 +748,33 @@ def cmd_web(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fetch(args: argparse.Namespace) -> int:
+    from finance.services.email_fetch import email_banks, fetch_and_import
+
+    banks = [args.bank] if args.bank else email_banks()
+    if not banks:
+        print("No banks have an ingest.email config. Add one to config/banks/<bank>.yaml.")
+        return 1
+    rc = 0
+    for b in banks:
+        try:
+            r = fetch_and_import(b, dry_run=args.dry_run, ai_fallback=args.ai_fallback)
+        except Exception as exc:
+            print(f"{b}: ERROR {exc}")
+            rc = 1
+            continue
+        tag = " [dry-run]" if r["dry_run"] else ""
+        print(f"{b}: {r['scanned']} new message(s), imported {r['imported']} row(s){tag}")
+        for f in r["files"]:
+            if f["ok"]:
+                warn = "" if f["verified"] else "  (balance chain not verified)"
+                print(f"   ✓ {f['file']}: +{f['inserted']} new, {f['already']} already present{warn}")
+            else:
+                print(f"   ✗ {f['file']}: {f['error']}")
+                rc = 1
+    return rc
+
+
 def cmd_banks_list(_: argparse.Namespace) -> int:
     from finance.banks import list_banks, load_bank
 
@@ -1301,6 +1328,12 @@ def build_parser() -> argparse.ArgumentParser:
     web = sub.add_parser("web", help="Launch the web dashboard (auto-starts the API)")
     web.add_argument("--no-open", action="store_true", help="Don't open the browser")
     web.set_defaults(func=cmd_web)
+
+    fetch = sub.add_parser("fetch", help="Poll bank inboxes (IMAP) and import new statements")
+    fetch.add_argument("bank", nargs="?", help="Bank name (default: all email-configured banks)")
+    fetch.add_argument("--dry-run", action="store_true", help="Parse without writing")
+    fetch.add_argument("--ai-fallback", action="store_true", help="Use the AI extractor if parsing fails")
+    fetch.set_defaults(func=cmd_fetch)
 
     analyze = sub.add_parser("analyze", help="Analyze spending: recurring, cashflow, trends")
     analyze_sub = analyze.add_subparsers(dest="analyze_command", required=True)

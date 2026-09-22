@@ -32,6 +32,7 @@ class BankConfig:
     api: dict = field(default_factory=dict)
     accounts: dict[str, dict] = field(default_factory=dict)
     profile: StatementProfile | None = None     # parsing profile for csv/pdf
+    email: dict | None = None                   # IMAP inbox polling for statements
     _ledger_account: str | None = None          # legacy top-level fallback
 
     def ledger_account(self, account: str = "checking") -> str:
@@ -93,6 +94,7 @@ class BankConfig:
             api=ingest.get("api", {}) or {},
             accounts=data.get("accounts", {}) or {},
             profile=profile,
+            email=ingest.get("email"),
             _ledger_account=data.get("ledger_account"),
         )
 
@@ -107,6 +109,8 @@ class BankConfig:
             ingest["password_env"] = self.password_env
         if self.statements_dir:
             ingest["statements_dir"] = self.statements_dir
+        if self.email:
+            ingest["email"] = self.email
         if self.profile is not None and self.source in ("csv", "pdf"):
             ingest["profile"] = _profile_to_dict(self.profile)
         return {"name": self.name, "currency": self.currency, "ingest": ingest,

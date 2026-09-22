@@ -333,6 +333,14 @@ func (m Model) renderIngest() string {
 			styles.Dim.Render("   (h/l to adjust)") + "\n\n")
 		b.WriteString(styles.Ok.Render("enter to fetch"))
 
+	case stepFetch:
+		b.WriteString(fmt.Sprintf("%s %s  %s\n\n",
+			styles.Muted.Render("fetch"), styles.Title.Render(g.bank.Name),
+			styles.Dim.Render("["+g.account+"] inbox")))
+		b.WriteString(styles.Muted.Render("poll the mailbox for new statements") + "\n\n")
+		b.WriteString(styles.Ok.Render("enter to fetch & import") + "\n")
+		b.WriteString(styles.Dim.Render("f  import a file by path instead · esc back"))
+
 	case stepPath:
 		b.WriteString(fmt.Sprintf("%s %s  %s\n\n",
 			styles.Muted.Render("import"), styles.Title.Render(g.bank.Name),

@@ -229,11 +229,42 @@ type Bank struct {
 	Currency string   `json:"currency"`
 	Source   string   `json:"source"` // api | csv | pdf
 	Accounts []string `json:"accounts"`
+	Email    bool     `json:"email"` // has an IMAP inbox to poll
 }
 
 func (c *Client) Banks() ([]Bank, error) {
 	var out []Bank
 	return out, c.do("GET", "/banks", nil, &out)
+}
+
+type FetchFile struct {
+	File     string `json:"file"`
+	Ok       bool   `json:"ok"`
+	Inserted int    `json:"inserted"`
+	Already  int    `json:"already"`
+	Verified bool   `json:"verified"`
+	Error    string `json:"error"`
+}
+type FetchBankResult struct {
+	Bank     string      `json:"bank"`
+	Mailbox  string      `json:"mailbox"`
+	Scanned  int         `json:"scanned"`
+	Imported int         `json:"imported"`
+	Error    string      `json:"error"`
+	Files    []FetchFile `json:"files"`
+}
+type FetchResult struct {
+	Imported int               `json:"imported"`
+	Banks    []FetchBankResult `json:"banks"`
+}
+
+func (c *Client) Fetch(bank string, dryRun bool) (*FetchResult, error) {
+	body := map[string]any{"dry_run": dryRun}
+	if bank != "" {
+		body["bank"] = bank
+	}
+	var out FetchResult
+	return &out, c.doWith(c.long, "POST", "/fetch", body, &out)
 }
 
 type SyncResult struct {

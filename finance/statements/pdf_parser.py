@@ -99,10 +99,27 @@ def rows_from_lines(lines: list[str], profile: StatementProfile) -> list[Stateme
     return rows
 
 
-def _looks_like_password_error(exc: Exception) -> bool:
-    """True when pdfminer/pdfplumber failed because the PDF is encrypted."""
-    text = (type(exc).__name__ + " " + str(exc)).lower()
-    return "password" in text or "encrypt" in text
+def _looks_like_password_error(exc: BaseException) -> bool:
+    """True when pdfminer/pdfplumber failed because the PDF is encrypted.
+
+    pdfplumber wraps the real error (e.g. PDFPasswordIncorrect) in a generic
+    PdfminerException with an empty message, so walk the args + cause chain, not
+    just the outer type/text.
+    """
+    parts: list[str] = []
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    for _ in range(6):
+        if cur is None or id(cur) in seen:
+            break
+        seen.add(id(cur))
+        parts.append(type(cur).__name__)
+        parts.append(str(cur))
+        for a in getattr(cur, "args", ()):
+            parts.append(type(a).__name__ if isinstance(a, BaseException) else str(a))
+        cur = cur.__cause__ or cur.__context__
+    blob = " ".join(parts).lower()
+    return "password" in blob or "encrypt" in blob
 
 
 def extract_lines(
@@ -131,7 +148,7 @@ def extract_lines(
             raise PasswordRequiredError(
                 "wrong password" if password else "PDF is password-protected"
             ) from exc
-        raise StatementFormatError(f"Could not open PDF: {exc}") from exc
+        raise StatementFormatError(f"Could not open PDF: {exc or type(exc).__name__}") from exc
 
     kwargs = {}
     if x_tolerance is not None:

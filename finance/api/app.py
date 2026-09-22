@@ -86,6 +86,12 @@ class SyncBody(BaseModel):
     end: str | None = None
 
 
+class FetchBody(BaseModel):
+    bank: str | None = None
+    dry_run: bool = False
+    ai_fallback: bool = False
+
+
 # ── serialization ─────────────────────────────────────────────────────────────
 def _classification_dict(c: Classification) -> dict:
     return {
@@ -366,7 +372,7 @@ def create_app() -> FastAPI:
             out.append({
                 "bank": b.bank, "name": b.name, "currency": b.currency,
                 "source": b.source, "accounts": b.account_names(),
-                "statements_dir": b.statements_dir,
+                "statements_dir": b.statements_dir, "email": bool(b.email),
             })
         return out
 
@@ -382,6 +388,22 @@ def create_app() -> FastAPI:
                 raise HTTPException(400, str(exc)) from exc
             mark_dirty()
         return result
+
+    @app.post("/fetch", dependencies=guard)
+    def fetch_route(body: FetchBody | None = None) -> dict:
+        from finance.services.email_fetch import email_banks, fetch_and_import
+
+        b = body or FetchBody()
+        banks = [b.bank] if b.bank else email_banks()
+        results = []
+        with _write_lock:
+            for name in banks:
+                try:
+                    results.append(fetch_and_import(name, dry_run=b.dry_run, ai_fallback=b.ai_fallback))
+                except Exception as exc:
+                    results.append({"bank": name, "error": str(exc), "files": [], "imported": 0, "scanned": 0})
+            mark_dirty()
+        return {"imported": sum(r.get("imported", 0) for r in results), "banks": results}
 
     @app.post("/import", dependencies=guard)
     def import_statement_route(body: ImportBody) -> dict:

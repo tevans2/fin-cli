@@ -23,6 +23,7 @@ type ingestStep int
 const (
 	stepBank     ingestStep = iota // choosing which bank
 	stepSync                       // api: confirm the pull
+	stepFetch                      // email: poll the inbox (default for email banks)
 	stepPath                       // csv/pdf: enter the file path
 	stepPassword                   // csv/pdf: the file is an encrypted PDF
 	stepPreview                    // csv/pdf: dry-run result, confirm commit
@@ -114,14 +115,47 @@ func (m Model) updateIngest(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if len(g.bank.Accounts) > 0 {
 					g.account = g.bank.Accounts[0]
 				}
-				if g.bank.Source == "api" {
+				switch {
+				case g.bank.Source == "api":
 					g.step = stepSync
-				} else {
+				case g.bank.Email: // inbox polling is the default for email banks
+					g.step = stepFetch
+				default:
 					g.step = stepPath
 					m.input.SetValue("")
 					m.input.Focus()
 					return m, textinput.Blink
 				}
+			}
+		}
+
+	case stepFetch:
+		switch msg.String() {
+		case "esc":
+			g.step = stepBank
+		case "f": // fall back to importing a file by path
+			g.step = stepPath
+			m.input.SetValue("")
+			m.input.Focus()
+			return m, textinput.Blink
+		case "enter":
+			g.busy = true
+			bank := g.bank.Bank
+			c := m.client
+			return m, func() tea.Msg {
+				r, err := c.Fetch(bank, false)
+				if err != nil {
+					return ingestDoneMsg{err: err}
+				}
+				for _, bk := range r.Banks {
+					if bk.Error != "" {
+						return ingestDoneMsg{err: fmt.Errorf("%s: %s", bk.Bank, bk.Error)}
+					}
+				}
+				if r.Imported == 0 {
+					return ingestDoneMsg{message: "no new statements to import"}
+				}
+				return ingestDoneMsg{message: fmt.Sprintf("fetched %s: +%d rows", bank, r.Imported)}
 			}
 		}
 
