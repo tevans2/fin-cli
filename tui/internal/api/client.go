@@ -95,6 +95,7 @@ type Record struct {
 	Merchant    *string `json:"merchant"`
 	Reviewed    bool    `json:"reviewed"`
 	Source      string  `json:"category_source"`
+	Notes       *string `json:"notes"`
 }
 
 type Candidate struct {
@@ -221,6 +222,13 @@ func (c *Client) Restore(bank string, record json.RawMessage) error {
 	return c.do("POST", "/categorize/restore", map[string]any{"bank": bank, "record": record}, nil)
 }
 
+// Note sets (or clears, with "") a free-text note on a transaction.
+func (c *Client) Note(bank, id, note string) (*MutationResult, error) {
+	var out MutationResult
+	err := c.do("POST", "/transactions/note", map[string]any{"bank": bank, "id": id, "note": note}, &out)
+	return &out, err
+}
+
 // ── ingestion ────────────────────────────────────────────────────────────────
 
 type Bank struct {
@@ -265,6 +273,41 @@ func (c *Client) Fetch(bank string, dryRun bool) (*FetchResult, error) {
 	}
 	var out FetchResult
 	return &out, c.doWith(c.long, "POST", "/fetch", body, &out)
+}
+
+// PendingMsg is a not-yet-imported statement email waiting in the mailbox.
+type PendingMsg struct {
+	Bank     string `json:"bank"`
+	MsgID    string `json:"msgid"`
+	Subject  string `json:"subject"`
+	Filename string `json:"filename"`
+}
+type PendingResult struct {
+	Mailbox  string       `json:"mailbox"`
+	Messages []PendingMsg `json:"messages"`
+}
+
+// Pending lists new statements without importing (fast — for staged progress).
+func (c *Client) Pending(bank string) (*PendingResult, error) {
+	var out PendingResult
+	return &out, c.doWith(c.long, "GET", "/fetch/pending?bank="+url.QueryEscape(bank), nil, &out)
+}
+
+type FetchOneResult struct {
+	Bank     string `json:"bank"`
+	File     string `json:"file"`
+	Ok       bool   `json:"ok"`
+	Inserted int    `json:"inserted"`
+	Already  int    `json:"already"`
+	Verified bool   `json:"verified"`
+	Error    string `json:"error"`
+}
+
+// FetchOne imports one statement message (by Message-ID).
+func (c *Client) FetchOne(bank, msgid string) (*FetchOneResult, error) {
+	var out FetchOneResult
+	body := map[string]any{"bank": bank, "msgid": msgid}
+	return &out, c.doWith(c.long, "POST", "/fetch/one", body, &out)
 }
 
 type SyncResult struct {

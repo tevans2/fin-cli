@@ -49,6 +49,12 @@ class RestoreBody(BaseModel):
     record: dict
 
 
+class NoteBody(BaseModel):
+    bank: str
+    id: str
+    note: str | None = None
+
+
 class CategoryAddBody(BaseModel):
     category: str
 
@@ -88,6 +94,13 @@ class SyncBody(BaseModel):
 
 class FetchBody(BaseModel):
     bank: str | None = None
+    dry_run: bool = False
+    ai_fallback: bool = False
+
+
+class FetchOneBody(BaseModel):
+    bank: str
+    msgid: str
     dry_run: bool = False
     ai_fallback: bool = False
 
@@ -235,6 +248,19 @@ def create_app() -> FastAPI:
         with _write_lock:
             before = snapshot(body.bank, body.id)
             ok = reject(body.bank, body.id)
+            after = snapshot(body.bank, body.id)
+            mark_dirty()
+        return {"ok": ok, "before": before, "after": after}
+
+    @app.post("/transactions/note", dependencies=guard)
+    def note_route(body: NoteBody) -> dict:
+        from finance.services.categorize import rebuild_journal, snapshot
+        from finance.services.transactions import update_transaction_note
+
+        with _write_lock:
+            before = snapshot(body.bank, body.id)
+            ok = update_transaction_note(body.bank, body.id, body.note)
+            rebuild_journal(body.bank)
             after = snapshot(body.bank, body.id)
             mark_dirty()
         return {"ok": ok, "before": before, "after": after}
@@ -404,6 +430,27 @@ def create_app() -> FastAPI:
                     results.append({"bank": name, "error": str(exc), "files": [], "imported": 0, "scanned": 0})
             mark_dirty()
         return {"imported": sum(r.get("imported", 0) for r in results), "banks": results}
+
+    @app.get("/fetch/pending", dependencies=guard)
+    def fetch_pending_route(bank: str) -> dict:
+        from finance.services.email_fetch import list_pending
+
+        try:
+            return list_pending(bank)
+        except Exception as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/fetch/one", dependencies=guard)
+    def fetch_one_route(body: FetchOneBody) -> dict:
+        from finance.services.email_fetch import import_one
+
+        with _write_lock:
+            try:
+                res = import_one(body.bank, body.msgid, dry_run=body.dry_run, ai_fallback=body.ai_fallback)
+            except Exception as exc:
+                raise HTTPException(400, str(exc)) from exc
+            mark_dirty()
+        return res
 
     @app.post("/import", dependencies=guard)
     def import_statement_route(body: ImportBody) -> dict:

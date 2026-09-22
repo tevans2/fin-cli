@@ -162,6 +162,11 @@ func (m Model) renderDetail(w, h int) string {
 				styles.Dim.Render(fmt.Sprintf("%.0f%%", cand.Share*100))))
 		}
 	}
+	if m.mode == note { // editing a note for this txn
+		b.WriteString("\n" + styles.Muted.Render("note ▸ ") + m.input.View() + "\n")
+	} else if r.Notes != nil && *r.Notes != "" {
+		b.WriteString("\n" + styles.Muted.Render("note: ") + styles.Dim.Render("✎ ") + *r.Notes + "\n")
+	}
 	return b.String()
 }
 
@@ -212,6 +217,7 @@ func (m Model) renderHelp() string {
 		{"1 – 9", "pick a ranked candidate"},
 		{"c", "choose a category (fuzzy finder)"},
 		{"s", "split across categories (amount or %)"},
+		{"n", "add / edit a note (saved as an hledger tag)"},
 		{"m", "peek at this merchant's history"},
 		{"x", "reject → back to uncategorized"},
 		{"a", "auto-apply all confident matches"},
@@ -304,7 +310,23 @@ func (m Model) renderIngest() string {
 	b.WriteString(styles.Title.Render("import") + "  " + styles.Dim.Render("verify → inbox") + "\n\n")
 
 	if g.busy {
-		b.WriteString(styles.Warn.Render("working…"))
+		label := g.progress
+		if label == "" {
+			label = "working…"
+		}
+		b.WriteString(styles.Warn.Render("▸ " + label))
+		if len(g.pending) > 0 {
+			b.WriteString("\n\n")
+			for i, p := range g.pending {
+				mark := "  "
+				if i < g.pidx {
+					mark = styles.Ok.Render("✓ ")
+				} else if i == g.pidx {
+					mark = styles.Warn.Render("▸ ")
+				}
+				b.WriteString(mark + styles.Dim.Render(p.Filename) + "\n")
+			}
+		}
 		return styles.Pane.Width(m.w - 2).Height(bodyH).Render(b.String())
 	}
 
@@ -484,18 +506,25 @@ func (m Model) footer() string {
 	if m.mode == finder {
 		return styles.Help.Render("enter select · ctrl-n/p move · esc cancel")
 	}
+	if m.mode == note {
+		return styles.Key.Render("note ▸ ") + m.input.View() + styles.Help.Render("   enter save · esc cancel")
+	}
 	if m.ingest.active {
 		if m.ingest.busy {
-			return styles.Help.Render("working… (ctrl-c quits)")
+			label := m.ingest.progress
+			if label == "" {
+				label = "working…"
+			}
+			return styles.Help.Render(label + "  (ctrl-c quits)")
 		}
 		return styles.Help.Render("j/k move · enter next · esc back")
 	}
 	if m.split.active {
 		return styles.Help.Render(m.splitHelp())
 	}
-	help := "j/k move · enter accept · 1-9 pick · c cat · s split · m peek · x reject · a auto · :import · u undo · ? help · q quit"
+	help := "j/k move · enter accept · 1-9 pick · c cat · s split · n note · m peek · x reject · a auto · :import · u undo · ? help · q quit"
 	if m.scope == "review" {
-		help = "j confirm+next · k up · c correct · s split · m peek · x reject · u undo · ? help · q quit"
+		help = "j confirm+next · k up · c correct · s split · n note · m peek · x reject · u undo · ? help · q quit"
 	}
 	line := styles.Help.Render(help)
 	if m.msg != "" {

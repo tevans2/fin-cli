@@ -44,6 +44,13 @@ type ingestState struct {
 	pwRetry  bool // the last password attempt was wrong
 	preview  *api.ImportResult
 	errMsg   string // a dry-run/parse error (e.g. broken balance chain)
+
+	// staged inbox fetch (email banks)
+	pending  []api.PendingMsg
+	pidx     int
+	imported int
+	perr     string
+	progress string // live stage label shown while busy
 }
 
 // ── messages ───────────────────────────────────────────────────────────────────
@@ -59,6 +66,26 @@ type previewMsg struct {
 type ingestDoneMsg struct {
 	message string
 	err     error
+}
+type pendingMsg struct {
+	res *api.PendingResult
+	err error
+}
+type fetchOneMsg struct {
+	res *api.FetchOneResult
+	err error
+}
+
+// importNext kicks off the import of the current pending message.
+func (m Model) importNext() tea.Cmd {
+	g := m.ingest
+	row := g.pending[g.pidx]
+	c := m.client
+	bank := g.bank.Bank
+	return func() tea.Msg {
+		r, err := c.FetchOne(bank, row.MsgID)
+		return fetchOneMsg{res: r, err: err}
+	}
 }
 
 // ── update ─────────────────────────────────────────────────────────────────────
@@ -140,35 +167,11 @@ func (m Model) updateIngest(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, textinput.Blink
 		case "enter":
 			g.busy = true
+			g.progress = "connecting to inbox…"
+			g.pending, g.pidx, g.imported, g.perr = nil, 0, 0, ""
 			bank := g.bank.Bank
 			c := m.client
-			return m, func() tea.Msg {
-				r, err := c.Fetch(bank, false)
-				if err != nil {
-					return ingestDoneMsg{err: err}
-				}
-				scanned := 0
-				firstErr := ""
-				for _, bk := range r.Banks {
-					scanned += bk.Scanned
-					if bk.Error != "" && firstErr == "" {
-						firstErr = bk.Bank + ": " + bk.Error
-					}
-					for _, f := range bk.Files {
-						if !f.Ok && firstErr == "" {
-							firstErr = f.File + ": " + f.Error
-						}
-					}
-				}
-				// surface a real failure (e.g. a locked PDF) instead of hiding it
-				if r.Imported == 0 && firstErr != "" {
-					return ingestDoneMsg{err: fmt.Errorf("%s", firstErr)}
-				}
-				if r.Imported == 0 {
-					return ingestDoneMsg{message: fmt.Sprintf("no new statements (%d scanned)", scanned)}
-				}
-				return ingestDoneMsg{message: fmt.Sprintf("fetched %s: +%d rows", bank, r.Imported)}
-			}
+			return m, func() tea.Msg { p, err := c.Pending(bank); return pendingMsg{res: p, err: err} }
 		}
 
 	case stepSync:

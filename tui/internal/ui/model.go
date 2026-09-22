@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"fin-tui/internal/api"
@@ -16,6 +17,7 @@ const (
 	normal mode = iota
 	finder
 	command
+	note
 )
 
 // Model is the whole TUI: a filtered transaction list (scope) with a
@@ -248,6 +250,50 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.ingest.step = stepPreview
 		return m, nil
+	case pendingMsg:
+		g := &m.ingest
+		if msg.err != nil {
+			g.busy, g.active = false, false
+			m.msg = "error: " + msg.err.Error()
+			return m, nil
+		}
+		g.pending = msg.res.Messages
+		if len(g.pending) == 0 {
+			g.busy, g.active = false, false
+			m.msg = "no new statements in " + msg.res.Mailbox
+			return m, m.loadStatus()
+		}
+		g.pidx, g.imported, g.perr = 0, 0, ""
+		g.progress = fmt.Sprintf("found %d · importing %s (1/%d)…", len(g.pending), g.pending[0].Filename, len(g.pending))
+		return m, m.importNext()
+	case fetchOneMsg:
+		g := &m.ingest
+		if msg.err != nil {
+			g.busy, g.active = false, false
+			m.msg = "error: " + msg.err.Error()
+			return m, tea.Batch(m.loadPlan(), m.loadStatus())
+		}
+		g.imported += msg.res.Inserted
+		if !msg.res.Ok && g.perr == "" {
+			g.perr = msg.res.File + ": " + msg.res.Error
+		}
+		g.pidx++
+		if g.pidx < len(g.pending) {
+			g.progress = fmt.Sprintf("importing %s (%d/%d)…", g.pending[g.pidx].Filename, g.pidx+1, len(g.pending))
+			return m, m.importNext()
+		}
+		// all done → jump to the inbox
+		g.busy, g.active = false, false
+		m.scope, m.cursor, m.loading = "uncat", 0, true
+		m.undo, m.redo = nil, nil
+		if g.imported == 0 && g.perr != "" {
+			m.msg = g.perr
+		} else if g.perr != "" {
+			m.msg = fmt.Sprintf("imported %d row(s) · %s", g.imported, g.perr)
+		} else {
+			m.msg = fmt.Sprintf("imported %d row(s)", g.imported)
+		}
+		return m, tea.Batch(m.loadPlan(), m.loadStatus())
 	case ingestDoneMsg:
 		m.ingest.busy = false
 		m.ingest.active = false
@@ -275,6 +321,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateFinder(msg)
 		case command:
 			return m.updateCommand(msg)
+		case note:
+			return m.updateNote(msg)
 		default:
 			if m.ingest.active {
 				return m.updateIngest(msg)
@@ -333,6 +381,17 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.startSplit(it)
 		}
 		return m, nil
+	case "n": // add/edit a free-text note on the focused txn
+		if ok {
+			m.mode = note
+			cur := ""
+			if it.Record.Notes != nil {
+				cur = *it.Record.Notes
+			}
+			m.input.SetValue(cur)
+			m.input.Focus()
+			return m, textinput.Blink
+		}
 	case "m": // peek at this merchant's history
 		if ok && it.Classification.MerchantKey != nil && *it.Classification.MerchantKey != "" {
 			d, err := m.client.MerchantDetail(*it.Classification.MerchantKey)
@@ -438,6 +497,38 @@ func (m Model) updateFinder(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	m.filter()
+	return m, cmd
+}
+
+func (m Model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.mode = normal
+		return m, nil
+	case "enter":
+		it, ok := m.current()
+		m.mode = normal
+		if !ok {
+			return m, nil
+		}
+		text := strings.TrimSpace(m.input.Value())
+		res, err := m.client.Note(it.Record.Institution, it.Record.ID, text)
+		if err == nil { // optimistic: reflect the note in the detail pane immediately
+			if text == "" {
+				m.items[m.cursor].Record.Notes = nil
+			} else {
+				n := text
+				m.items[m.cursor].Record.Notes = &n
+			}
+		}
+		label := "note"
+		if text == "" {
+			label = "cleared note"
+		}
+		return m, m.mutate(it.Record.Institution, res, err, label)
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
 	return m, cmd
 }
 

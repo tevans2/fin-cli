@@ -22,6 +22,10 @@ def _format_amount(amount: str | Decimal, currency: str) -> str:
 def _render_transaction(record: TransactionRecord) -> str:
     description = record.alias or record.payee or record.description
     header = f"{record.date} {_status_marker(record.status)} {description}  ; txn_id: {record.id}\n"
+    # a free-text note becomes a queryable hledger tag comment (hledger print tag:note)
+    if record.notes:
+        note = " ".join(record.notes.split())
+        header += f"    ; note: {note}\n"
     source = f"    {record.ledger_account}    {_format_amount(record.amount, record.currency)}\n"
     if record.splits:
         postings = "".join(

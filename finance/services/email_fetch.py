@@ -72,92 +72,130 @@ def email_banks() -> list[str]:
     return [b for b in list_banks() if load_bank(b).email]
 
 
-def fetch_and_import(bank: str, *, dry_run: bool = False, ai_fallback: bool = False) -> dict:
-    """Poll a bank's IMAP mailbox and import every new statement PDF found."""
+def _spec(bank: str):
     ensure_env_loaded()
     cfg = load_bank(bank)
-    spec = cfg.email
-    if not spec:
+    if not cfg.email:
         raise ValueError(f"bank {bank!r} has no ingest.email config")
+    return cfg, cfg.email
 
-    host = spec.get("host", "imap.gmail.com")
-    port = int(spec.get("port", 993))
+
+def _connect(spec: dict):
     user_env = spec.get("user_env", "GMAIL_USER")
     pass_env = spec.get("password_env", "GMAIL_APP_PASSWORD")
-    user = os.getenv(user_env)
-    pw = os.getenv(pass_env)
-    mailbox = spec.get("mailbox", "INBOX")
-    account = spec.get("account") or cfg.account_names()[0]
-    ai_fallback = ai_fallback or bool(spec.get("ai_fallback"))  # config can force AI (e.g. GoTyme)
+    user, pw = os.getenv(user_env), os.getenv(pass_env)
     if not (user and pw):
         raise ValueError(f"missing IMAP credentials — set {user_env} and {pass_env} in your env/.env")
+    conn = imaplib.IMAP4_SSL(spec.get("host", "imap.gmail.com"), int(spec.get("port", 993)),
+                             ssl_context=ssl.create_default_context())
+    conn.login(user, pw)
+    typ, _ = conn.select(f'''"{spec.get("mailbox", "INBOX")}"''', readonly=True)
+    if typ != "OK":
+        conn.logout()
+        raise ValueError(f"cannot open mailbox {spec.get('mailbox', 'INBOX')!r} — check the label name")
+    return conn
 
-    state = _load_processed()
-    done = set(state.get(bank, []))
-    new_done: set[str] = set()
-    files: list[dict] = []
-    imported_total = 0
-    scanned = 0
 
-    conn = imaplib.IMAP4_SSL(host, port, ssl_context=ssl.create_default_context())
+def list_pending(bank: str) -> dict:
+    """New (not-yet-imported) statement messages in the bank's mailbox."""
+    _cfg, spec = _spec(bank)
+    done = set(_load_processed().get(bank, []))
+    mailbox = spec.get("mailbox", "INBOX")
+    messages: list[dict] = []
+    conn = _connect(spec)
     try:
-        conn.login(user, pw)
-        typ, _ = conn.select(f'"{mailbox}"', readonly=True)
-        if typ != "OK":
-            raise ValueError(f"cannot open mailbox {mailbox!r} — check the label name")
         typ, data = conn.uid("SEARCH", None, "ALL")
-        uids = data[0].split() if data and data[0] else []
-        for uid in uids:
-            typ, hd = conn.uid("FETCH", uid, "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])")
-            msgid = ""
-            if hd and hd[0]:
-                msgid = (emaillib.message_from_bytes(hd[0][1]).get("Message-ID") or "").strip()
-            if msgid and msgid in done:
-                continue
-
+        for uid in (data[0].split() if data and data[0] else []):
             typ, raw = conn.uid("FETCH", uid, "(BODY.PEEK[])")
             if not (raw and raw[0]):
                 continue
             msg = emaillib.message_from_bytes(raw[0][1])
+            msgid = (msg.get("Message-ID") or "").strip()
+            if msgid and msgid in done:
+                continue
             pdfs = _pdf_attachments(msg)
             if not pdfs:
                 continue
-            scanned += 1
-
-            ok_all = True
-            with tempfile.TemporaryDirectory() as td:
-                for name, blob in pdfs:
-                    fp = Path(td) / Path(name).name
-                    fp.write_bytes(blob)
-                    try:
-                        res = import_statement(
-                            fp, bank=bank, account=account,
-                            profile=cfg.parse_profile(account),
-                            dry_run=dry_run, ai_fallback=ai_fallback,
-                        )
-                        imported_total += res["inserted"]
-                        files.append({
-                            "file": name, "ok": True,
-                            "inserted": res["inserted"],
-                            "already": res["skipped_already_present"],
-                            "verified": res["summary"].balance_chain_verified,
-                        })
-                    except Exception as exc:
-                        ok_all = False
-                        files.append({"file": name, "ok": False, "error": str(exc)})
-            if ok_all and not dry_run and msgid:
-                new_done.add(msgid)
+            messages.append({"bank": bank, "msgid": msgid,
+                             "subject": _decode(msg.get("Subject", "")), "filename": pdfs[0][0]})
     finally:
         try:
             conn.logout()
         except Exception:
             pass
+    return {"bank": bank, "mailbox": mailbox, "messages": messages}
 
-    if new_done and not dry_run:
-        state[bank] = sorted(done | new_done)
-        _save_processed(state)
 
-    return {
-        "bank": bank, "mailbox": mailbox, "scanned": scanned,
-        "imported": imported_total, "files": files, "dry_run": dry_run,
-    }
+def import_one(bank: str, msgid: str, *, dry_run: bool = False, ai_fallback: bool = False) -> dict:
+    """Import the statement PDF from a single message (by Message-ID)."""
+    cfg, spec = _spec(bank)
+    account = spec.get("account") or cfg.account_names()[0]
+    ai = ai_fallback or bool(spec.get("ai_fallback"))
+    result = {"bank": bank, "msgid": msgid, "file": None, "ok": False,
+              "inserted": 0, "already": 0, "verified": False, "error": None}
+    conn = _connect(spec)
+    try:
+        typ, data = conn.uid("SEARCH", None, "HEADER", "Message-ID", f'"{msgid}"')
+        uids = data[0].split() if data and data[0] else []
+        if not uids:
+            result["error"] = "message not found"
+            return result
+        typ, raw = conn.uid("FETCH", uids[0], "(BODY.PEEK[])")
+        msg = emaillib.message_from_bytes(raw[0][1])
+        pdfs = _pdf_attachments(msg)
+        if not pdfs:
+            result["error"] = "no PDF attachment"
+            return result
+        name, blob = pdfs[0]
+        result["file"] = name
+        with tempfile.TemporaryDirectory() as td:
+            fp = Path(td) / Path(name).name
+            fp.write_bytes(blob)
+            try:
+                res = import_statement(fp, bank=bank, account=account,
+                                       profile=cfg.parse_profile(account),
+                                       dry_run=dry_run, ai_fallback=ai)
+                result.update(ok=True, inserted=res["inserted"],
+                              already=res["skipped_already_present"],
+                              verified=res["summary"].balance_chain_verified)
+            except Exception as exc:
+                result["error"] = str(exc)
+        if result["ok"] and not dry_run and msgid:
+            state = _load_processed()
+            state[bank] = sorted(set(state.get(bank, [])) | {msgid})
+            _save_processed(state)
+    finally:
+        try:
+            conn.logout()
+        except Exception:
+            pass
+    return result
+
+
+def fetch_and_import(bank: str, *, dry_run: bool = False, ai_fallback: bool = False,
+                     progress=None) -> dict:
+    """Poll a bank's IMAP mailbox and import every new statement PDF found.
+
+    ``progress`` is an optional ``callable(str)`` that receives human-readable
+    stage messages ("connecting…", "found N…", "importing X (i/N)…").
+    """
+    def emit(msg: str) -> None:
+        if progress:
+            progress(msg)
+
+    cfg, spec = _spec(bank)
+    emit(f"connecting to {spec.get('mailbox', 'INBOX')}")
+    pending = list_pending(bank)
+    msgs = pending["messages"]
+    emit(f"found {len(msgs)} new statement(s)")
+
+    files: list[dict] = []
+    imported = 0
+    for i, row in enumerate(msgs, 1):
+        emit(f"importing {row['filename']} ({i}/{len(msgs)})")
+        r = import_one(bank, row["msgid"], dry_run=dry_run, ai_fallback=ai_fallback)
+        files.append({k: r[k] for k in ("file", "ok", "inserted", "already", "verified", "error")})
+        imported += r["inserted"]
+    emit("done")
+    return {"bank": bank, "mailbox": pending["mailbox"], "scanned": len(msgs),
+            "imported": imported, "files": files, "dry_run": dry_run}

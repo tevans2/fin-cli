@@ -758,7 +758,8 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     rc = 0
     for b in banks:
         try:
-            r = fetch_and_import(b, dry_run=args.dry_run, ai_fallback=args.ai_fallback)
+            r = fetch_and_import(b, dry_run=args.dry_run, ai_fallback=args.ai_fallback,
+                                 progress=lambda s: print(f"   … {s}"))
         except Exception as exc:
             print(f"{b}: ERROR {exc}")
             rc = 1

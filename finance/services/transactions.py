@@ -74,6 +74,31 @@ def update_transaction_category(
     return updated_any
 
 
+def update_transaction_note(bank: str, txn_id: str, note: str | None) -> bool:
+    """Set (or clear, with None/empty) a free-text note on a transaction."""
+    config = load_app_config()
+    store = JsonlTransactionStore(config.paths.transactions_dir)
+    bank_dir = config.paths.transactions_dir / bank
+    if not bank_dir.exists():
+        return False
+
+    updated_any = False
+    for path in sorted(bank_dir.glob("*.jsonl")):
+        records = store.read_file(path)
+        changed = False
+        for record in records:
+            if record.id == txn_id:
+                record.notes = (note or "").strip() or None
+                record.updated_at = utc_now_iso()
+                changed = True
+                updated_any = True
+                break
+        if changed:
+            store.write_file(path, records)
+            break
+    return updated_any
+
+
 def update_transaction_splits(
     bank: str, txn_id: str, splits: list[TransactionSplit], source: str = "manual:split",
     merchant: str | None = None, reviewed: bool = True,

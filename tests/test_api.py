@@ -106,6 +106,29 @@ def test_apply_returns_before_after_and_restore_undoes(client):
     assert u2["category"] == "expenses:other"
 
 
+def test_note_set_clear_and_journal(client):
+    import os
+    from pathlib import Path
+
+    resp = client.post("/transactions/note", json={"bank": "investec", "id": "u2", "note": "dinner with Sam"}).json()
+    assert resp["ok"] is True
+    assert resp["before"]["notes"] in (None, "")
+    assert resp["after"]["notes"] == "dinner with Sam"
+
+    u2 = {t["id"]: t for t in client.get("/transactions", params={"bank": "investec"}).json()}["u2"]
+    assert u2["notes"] == "dinner with Sam"
+
+    # rendered into the generated hledger journal as a note: tag
+    journal = Path(os.environ["FIN_DATA_DIR"]) / "journal" / "generated" / "investec.journal"
+    assert "note: dinner with Sam" in journal.read_text()
+
+    # clearing removes it
+    client.post("/transactions/note", json={"bank": "investec", "id": "u2", "note": ""})
+    u2b = {t["id"]: t for t in client.get("/transactions", params={"bank": "investec"}).json()}["u2"]
+    assert u2b["notes"] in (None, "")
+    assert "note: dinner with Sam" not in journal.read_text()
+
+
 def test_apply_splits(client):
     ok = client.post("/categorize/apply", json={
         "bank": "investec", "id": "u2",
