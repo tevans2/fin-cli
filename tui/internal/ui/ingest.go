@@ -147,13 +147,25 @@ func (m Model) updateIngest(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					return ingestDoneMsg{err: err}
 				}
+				scanned := 0
+				firstErr := ""
 				for _, bk := range r.Banks {
-					if bk.Error != "" {
-						return ingestDoneMsg{err: fmt.Errorf("%s: %s", bk.Bank, bk.Error)}
+					scanned += bk.Scanned
+					if bk.Error != "" && firstErr == "" {
+						firstErr = bk.Bank + ": " + bk.Error
+					}
+					for _, f := range bk.Files {
+						if !f.Ok && firstErr == "" {
+							firstErr = f.File + ": " + f.Error
+						}
 					}
 				}
+				// surface a real failure (e.g. a locked PDF) instead of hiding it
+				if r.Imported == 0 && firstErr != "" {
+					return ingestDoneMsg{err: fmt.Errorf("%s", firstErr)}
+				}
 				if r.Imported == 0 {
-					return ingestDoneMsg{message: "no new statements to import"}
+					return ingestDoneMsg{message: fmt.Sprintf("no new statements (%d scanned)", scanned)}
 				}
 				return ingestDoneMsg{message: fmt.Sprintf("fetched %s: +%d rows", bank, r.Imported)}
 			}
