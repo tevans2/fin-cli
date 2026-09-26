@@ -15,8 +15,8 @@ import json
 import os
 import re
 import shutil
-from collections import Counter, defaultdict
-from decimal import Decimal
+from collections import defaultdict
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from finance.config import ensure_env_loaded, load_app_config
@@ -49,6 +49,49 @@ def normalize_description(description: str) -> str:
 
 def content_key(date: str, amount: str, description: str) -> tuple[str, str, str]:
     return date, f"{Decimal(amount):.2f}", normalize_description(description)
+
+
+def _dec_or_none(value) -> Decimal | None:
+    if value in (None, ""):
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _index_row(index: dict, date: str, amount: str, balance, description: str) -> None:
+    """Register a stored/kept row for duplicate detection, keyed by (date, amount)."""
+    da = (date, f"{Decimal(amount):.2f}")
+    index[da].append({
+        "balance": _dec_or_none(balance),
+        "ndesc": normalize_description(description),
+        "consumed": False,
+    })
+
+
+def _consume_duplicate(index: dict, date: str, amount: str, balance, description) -> bool:
+    """True when an as-yet-unmatched existing row is the SAME transaction.
+
+    The bank's running balance is the reliable fingerprint — it's identical across
+    re-imports even when the description is re-extracted differently (e.g. by the
+    AI fallback). Only when a balance isn't available on both sides do we fall back
+    to matching the normalized description.
+    """
+    da = (date, f"{Decimal(amount):.2f}")
+    rbal = _dec_or_none(balance)
+    rndesc = normalize_description(description)
+    for entry in index.get(da, []):
+        if entry["consumed"]:
+            continue
+        if rbal is not None and entry["balance"] is not None:
+            same = rbal == entry["balance"]
+        else:
+            same = rndesc == entry["ndesc"]
+        if same:
+            entry["consumed"] = True
+            return True
+    return False
 
 
 def _unknown_category(amount: str) -> str:
@@ -157,25 +200,25 @@ def import_statement(
     aliases = AliasStore(config.paths.aliases_config).load()
     tx_store = JsonlTransactionStore(config.paths.transactions_dir)
 
-    # Every stored record for this bank, keyed by content, so a row already held
-    # in any year file (including one carrying a category) is never re-added.
-    existing_keys: Counter = Counter()
+    # De-dupe against everything already stored for this bank so a row already held
+    # in any year file (including one carrying a category) is never re-added. Match
+    # on the bank's running balance first (stable across re-imports), falling back
+    # to the description — see _consume_duplicate.
+    dupe_index: dict[tuple[str, str], list[dict]] = defaultdict(list)
     existing_ids: set[str] = set()
     bank_dir = config.paths.transactions_dir / bank
     if bank_dir.exists():
         for path in sorted(bank_dir.glob("*.jsonl")):
             for record in tx_store.read_file(path):
-                existing_keys[content_key(record.date, record.amount, record.description)] += 1
+                _index_row(dupe_index, record.date, record.amount,
+                           (record.provider_metadata or {}).get("balance"), record.description)
                 existing_ids.add(record.id)
 
-    remaining = Counter(existing_keys)
     seen_ids: set[str] = set()
     new_records: list[TransactionRecord] = []
     skipped: list[dict] = []
     for row in rows:
-        key = content_key(row.date, row.amount, row.description)
-        if remaining[key] > 0:
-            remaining[key] -= 1
+        if _consume_duplicate(dupe_index, row.date, row.amount, row.balance, row.description):
             skipped.append({"date": row.date, "amount": row.amount, "description": row.description})
             continue
         occurrence = 0
@@ -188,6 +231,8 @@ def import_statement(
         record.validate()
         seen_ids.add(record.id)
         new_records.append(record)
+        # index the kept row so a second identical row in THIS statement is caught too
+        _index_row(dupe_index, row.date, row.amount, row.balance, row.description)
 
     by_year: dict[int, list[TransactionRecord]] = defaultdict(list)
     for record in new_records:
