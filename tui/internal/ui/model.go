@@ -36,6 +36,12 @@ type Model struct {
 	filtered []string
 	fcursor  int
 
+	// command-line (`:`) tab-completion popup
+	comp       []string
+	compCursor int
+	compOpen   bool
+	compCat    bool // completing a category (no trailing space on accept)
+
 	split       splitState
 	splitAdding bool // the finder is picking a category for the split editor
 
@@ -407,6 +413,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = command
 		m.input.SetValue("")
 		m.input.Focus()
+		m.compOpen = false
 		return m, textinput.Blink
 	case "c": // category finder
 		if ok {
@@ -532,12 +539,91 @@ func (m Model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// completionCandidates returns the current token and the options that can
+// complete it, based on the command grammar. `category` marks taxonomy options
+// (accepted without a trailing space so they can be edited).
+func (m Model) completionCandidates() (token string, cands []string, category bool) {
+	val := m.input.Value()
+	ls := strings.LastIndex(val, " ")
+	token = val[ls+1:]
+	head := strings.Fields(val[:ls+1])
+
+	switch {
+	case len(head) == 0:
+		cands = []string{"uncat", "review", "all", "auto", "cat", "import", "help", "q"}
+	case len(head) == 1 && head[0] == "cat":
+		cands = []string{"add", "rename"}
+	case head[0] == "cat" && len(head) >= 2 && (head[1] == "add" || head[1] == "rename"):
+		cands, category = m.taxonomy, true // start from an existing category and edit
+	}
+
+	if token != "" && cands != nil { // filter by what's typed (substring, like the finder)
+		q := strings.ToLower(token)
+		var out []string
+		for _, c := range cands {
+			if strings.Contains(strings.ToLower(c), q) {
+				out = append(out, c)
+			}
+		}
+		cands = out
+	}
+	return token, cands, category
+}
+
+// applyCompletion replaces the current token with the chosen option.
+func (m *Model) applyCompletion(choice string, category bool) {
+	val := m.input.Value()
+	prefix := val[:strings.LastIndex(val, " ")+1]
+	nv := prefix + choice
+	if !category {
+		nv += " " // commands/subcommands take further arguments
+	}
+	m.input.SetValue(nv)
+	m.input.CursorEnd()
+}
+
 func (m Model) updateCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "tab":
+		if m.compOpen {
+			if len(m.comp) > 0 {
+				m.applyCompletion(m.comp[m.compCursor], m.compCat)
+			}
+			m.compOpen = false
+			return m, nil
+		}
+		_, cands, cat := m.completionCandidates()
+		if len(cands) == 1 {
+			m.applyCompletion(cands[0], cat)
+		} else if len(cands) > 1 {
+			m.comp, m.compCursor, m.compCat, m.compOpen = cands, 0, cat, true
+		}
+		return m, nil
+	case "ctrl+n", "down":
+		if m.compOpen && len(m.comp) > 0 {
+			m.compCursor = (m.compCursor + 1) % len(m.comp)
+		}
+		return m, nil
+	case "ctrl+p", "up":
+		if m.compOpen && len(m.comp) > 0 {
+			m.compCursor = (m.compCursor - 1 + len(m.comp)) % len(m.comp)
+		}
+		return m, nil
 	case "esc":
+		if m.compOpen { // first esc closes the popup, second leaves command mode
+			m.compOpen = false
+			return m, nil
+		}
 		m.mode = normal
 		return m, nil
 	case "enter":
+		if m.compOpen { // accept the highlighted completion instead of running
+			if len(m.comp) > 0 {
+				m.applyCompletion(m.comp[m.compCursor], m.compCat)
+			}
+			m.compOpen = false
+			return m, nil
+		}
 		raw := strings.TrimSpace(m.input.Value())
 		m.mode = normal
 		fields := strings.Fields(raw)
@@ -574,6 +660,13 @@ func (m Model) updateCommand(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	if m.compOpen { // live-filter the popup as the token changes
+		_, cands, cat := m.completionCandidates()
+		m.comp, m.compCat, m.compCursor = cands, cat, 0
+		if len(cands) == 0 {
+			m.compOpen = false
+		}
+	}
 	return m, cmd
 }
 

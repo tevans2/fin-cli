@@ -66,7 +66,9 @@ func (m Model) View() string {
 		listW = 26
 	}
 	detailW := m.w - listW - 4
-	bodyH := m.h - 4
+	// the footer can grow (the `:` completion popup); size the body to fit it
+	foot := m.footer()
+	bodyH := m.h - 3 - (strings.Count(foot, "\n") + 1)
 	if bodyH < 3 {
 		bodyH = 3
 	}
@@ -84,7 +86,7 @@ func (m Model) View() string {
 	right := styles.Pane.Width(detailW).Height(bodyH).Render(rightBody)
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
 
-	return strings.Join([]string{m.header(), body, m.footer()}, "\n")
+	return strings.Join([]string{m.header(), body, foot}, "\n")
 }
 
 func (m Model) header() string {
@@ -228,8 +230,9 @@ func (m Model) renderHelp() string {
 		{":all", "every transaction"},
 		{":import", "ingest a bank (sync or import a file)"},
 		{":auto", "auto-apply confident matches"},
-		{":cat add <name>", "add a category"},
+		{":cat add <name>", "add a category (tab completes existing)"},
 		{":cat rename <a> <b>", "rename a category"},
+		{"tab", "complete the command line (↑↓ to choose)"},
 		{":help", "show this help"},
 		{":q", "quit"},
 	})
@@ -499,9 +502,39 @@ func (m Model) renderSplit(w, h int) string {
 	return b.String()
 }
 
+func (m Model) renderCompMenu() string {
+	const win = 8
+	start := 0
+	if m.compCursor >= win {
+		start = m.compCursor - win + 1
+	}
+	end := start + win
+	if end > len(m.comp) {
+		end = len(m.comp)
+	}
+	var b strings.Builder
+	for i := start; i < end; i++ {
+		if i == m.compCursor {
+			b.WriteString(styles.Sel.Render(" "+m.comp[i]+" ") + "\n")
+		} else {
+			b.WriteString(styles.Dim.Render(" "+m.comp[i]+" ") + "\n")
+		}
+	}
+	more := ""
+	if len(m.comp) > win {
+		more = styles.Dim.Render(fmt.Sprintf("  (%d/%d)", m.compCursor+1, len(m.comp)))
+	}
+	return strings.TrimRight(b.String(), "\n") + more
+}
+
 func (m Model) footer() string {
 	if m.mode == command {
-		return styles.Key.Render(":") + m.input.View()
+		line := styles.Key.Render(":") + m.input.View()
+		if m.compOpen && len(m.comp) > 0 {
+			hint := styles.Dim.Render("   tab/↑↓ choose · enter accept · esc close")
+			return m.renderCompMenu() + "\n" + line + hint
+		}
+		return line + styles.Dim.Render("   tab to complete")
 	}
 	if m.mode == finder {
 		return styles.Help.Render("enter select · ctrl-n/p move · esc cancel")
